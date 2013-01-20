@@ -2,7 +2,7 @@ from twisted.internet import defer
 from twisted.internet.endpoints import TCP4ClientEndpoint
 from steam_base import EMsg, EResult, EUniverse, EAccountType
 from protobuf import steammessages_clientserver_pb2
-from connection import SteamFactory
+from connection import SteamFactory, SteamProtocol
 from steamid import SteamID
 import msg_base
 import struct
@@ -81,8 +81,6 @@ class SteamClient():
 		# jobids aren't preserved for a logon
 		self.deferredLogin = defer.Deferred()
 		return self.deferredLogin
-		#logonResponse = yield self.deferredLogin
-		#print("got logon response", logonResponse.body.eresult)
 
 	def login(self, username=None, password=None):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogon, EMsg.ClientLogon)
@@ -99,7 +97,6 @@ class SteamClient():
 		message.body.password = password
 		
 		localip = self.client.getBoundAddress()
-		print(localip)
 		message.body.obfustucated_private_ip = 1111
 
 		self.client.sendMessage(message)
@@ -120,29 +117,33 @@ class SteamClient():
 		return defer.succeed(None)
 		
 		
-	def handleMessage(self, msg):
-		emsg, = struct.unpack_from('I', msg)
-		is_proto = emsg & 0x80000000 == 0x80000000
-		emsg = emsg & ~0x80000000
+	def handleMessage(self, emsg_real, msg):
+		emsg = SteamProtocol.get_msg(emsg_real)
 		
-		if emsg == EMsg.ClientLogOnResponse and self.deferredLogin:
-			message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogonResponse)
-			message.parse(msg)
+		if emsg == EMsg.ClientLogOnResponse:
+			self.handleClientLogon(msg)
+		elif emsg == EMsg.ClientSessionToken:
+			self.handleSessionToken(msg)
 			
-			if message.body.steam2_ticket:
-				self.steam2_ticket = message.body.steam2_ticket
+		self.callback.handleMessage(emsg_real, msg)
+
+	def handleClientLogon(self, msg):
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogonResponse)
+		message.parse(msg)
 			
+		if message.body.steam2_ticket:
+			self.steam2_ticket = message.body.steam2_ticket
 			
+		if self.deferredLogin:
 			self.deferredLogin.callback(message.body.eresult)
 			self.deferredLogin = None
-		elif emsg == EMsg.ClientSessionToken:
-			message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientSessionToken)
-			message.parse(msg)
 			
-			self.session_token = message.body.token
-			
-			if self.deferredSessionToken:
-				self.deferredSessionToken.callback(self.session_token)
-				self.deferredSessionToken = None
-			
-		print('SteamClient got message:', emsg, "is_proto: ", is_proto)
+	def handleSessionToken(self, msg):
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientSessionToken)
+		message.parse(msg)
+		
+		self.session_token = message.body.token
+		
+		if self.deferredSessionToken:
+			self.deferredSessionToken.callback(self.session_token)
+			self.deferredSessionToken = None

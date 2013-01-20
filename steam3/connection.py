@@ -25,6 +25,13 @@ class SteamProtocol(protocol.Protocol):
 	StateMagic = 0
 	StateMessage = 1
 
+	@staticmethod
+	def get_msg(emsg):
+		return emsg & ~0x80000000
+	@staticmethod
+	def is_proto(emsg):
+		return emsg & 0x80000000 == 0x80000000
+		
 	def connectionMade(self):
 		self.session_key = None
 		self.netfilter = None
@@ -88,8 +95,8 @@ class SteamProtocol(protocol.Protocol):
 		
 	def dispatchMessage(self, msg):
 		emsg_real, = struct.unpack_from('I', msg)
-		emsg = emsg_real & ~0x80000000
-		print("message length: ", self.message_length, emsg, emsg_real, len(msg))
+		emsg = SteamProtocol.get_msg(emsg_real)
+		print("dispatchMessage: ", emsg, len(msg))
 		
 		if emsg == EMsg.ChannelEncryptRequest:
 			self.channelEncryptRequest(msg)
@@ -100,7 +107,7 @@ class SteamProtocol(protocol.Protocol):
 		elif emsg == EMsg.Multi:
 			self.splitMultiMessage(msg)
 			
-		self.factory.client.handleMessage(msg)	
+		self.factory.client.handleMessage(emsg_real, msg)	
 	
 	
 	def channelEncryptRequest(self, msg):
@@ -116,7 +123,6 @@ class SteamProtocol(protocol.Protocol):
 		print("Channel encrypt request. Proto: ", message.body.protocol_version, "Universe: ", message.body.universe)
 		
 		self.session_key = CryptoUtil.createSessionKey()
-		print("created key", len(self.session_key))
 		crypted_key = CryptoUtil.rsaEncrypt(self.session_key)
 		key_crc = binascii.crc32(crypted_key) & 0xFFFFFFFF
 		
@@ -130,9 +136,7 @@ class SteamProtocol(protocol.Protocol):
 	def channelEncryptResult(self, msg):
 		message = msg_base.Message(msg_base.MsgHdr, msg_base.ChannelEncryptResult)
 		message.parse(msg)
-		
-		print("Channel encrypt result: ", message.body.result)
-		
+
 		if message.body.result != EResult.OK:
 			raise ProtocolError('Unable to negotiate channel encryption')
 		

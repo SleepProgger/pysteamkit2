@@ -2,12 +2,13 @@ import sys
 
 from twisted.internet import defer, task
 from twisted.python import failure
-from client import SteamClient
+from steam3.client import SteamClient
 from steam_base import EResult
+from steam3.connection import SteamProtocol
 
 class SteamClientHandler:
-	def handleMessage(self, msg):
-		pass
+	def handleMessage(self, emsg, msg):
+		emsg = SteamProtocol.get_msg(emsg)
 		
 @defer.inlineCallbacks
 def main(reactor, username="", password=""):
