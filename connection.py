@@ -2,6 +2,7 @@ from twisted.internet import protocol, task
 from steam_base import EMsg, EUniverse, EResult
 from crypto import CryptoUtil
 from protobuf import steammessages_base_pb2, steammessages_clientserver_pb2
+from steamid import SteamID
 import msg_base
 import struct, binascii, StringIO, zipfile
 
@@ -35,6 +36,9 @@ class SteamProtocol(protocol.Protocol):
 		
 	def connectionLost(self, reason):
 		self.factory.client.handleDisconnected(reason)
+		
+	def getBoundAddress(self):
+		return self.transport.getHost().host
 		
 	def dataReceived(self, data):
 		self.buffer += data
@@ -83,12 +87,10 @@ class SteamProtocol(protocol.Protocol):
 		self.transport.write(buffer)
 		
 	def dispatchMessage(self, msg):
-		emsg, = struct.unpack_from('I', msg)
-		emsg = emsg & ~0x80000000
-		print("message length: ", self.message_length, emsg, len(msg))
+		emsg_real, = struct.unpack_from('I', msg)
+		emsg = emsg_real & ~0x80000000
+		print("message length: ", self.message_length, emsg, emsg_real, len(msg))
 		
-		self.factory.client.handleMessage(msg)
-				
 		if emsg == EMsg.ChannelEncryptRequest:
 			self.channelEncryptRequest(msg)
 		elif emsg == EMsg.ChannelEncryptResult:
@@ -97,6 +99,8 @@ class SteamProtocol(protocol.Protocol):
 			self.logonResponse(msg)
 		elif emsg == EMsg.Multi:
 			self.splitMultiMessage(msg)
+			
+		self.factory.client.handleMessage(msg)	
 	
 	
 	def channelEncryptRequest(self, msg):
@@ -144,7 +148,7 @@ class SteamProtocol(protocol.Protocol):
 		message.parse(msg)
 		
 		self.session_id = message.proto_header.client_sessionid
-		self.steamid = message.proto_header.steamid
+		self.steamid = SteamID(message.proto_header.steamid)
 		
 		delay = message.body.out_of_game_heartbeat_seconds
 		self.heartbeat = task.LoopingCall(self.heartbeat)
@@ -154,17 +158,17 @@ class SteamProtocol(protocol.Protocol):
 		message = msg_base.ProtobufMessage(steammessages_base_pb2.CMsgMulti)
 		message.parse(msg)
 		
-		if message.body.size_unzipped <= 0:
-			raise ProtocolError("Unexpected multi size: " + message.body.size_unzipped)
-			
-		zip_buffer = StringIO.StringIO(message.body.message_body)
-		with zipfile.ZipFile(zip_buffer, 'r') as zip:
-			z = zip.read('z')
+		payload = message.body.message_body
+		
+		if message.body.size_unzipped > 0:
+			zip_buffer = StringIO.StringIO(message.body.message_body)
+			with zipfile.ZipFile(zip_buffer, 'r') as zip:
+				payload = zip.read('z')
 		
 		i = 0
-		while i < len(z):
-			sub_size, = struct.unpack_from('I', z, i)
-			self.dispatchMessage(z[i+4:i+4+sub_size])
+		while i < len(payload):
+			sub_size, = struct.unpack_from('I', payload, i)
+			self.dispatchMessage(payload[i+4:i+4+sub_size])
 			i += sub_size + 4
 			
 		
