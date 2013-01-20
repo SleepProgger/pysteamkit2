@@ -1,7 +1,7 @@
-from twisted.internet import protocol
+from twisted.internet import protocol, task
 from steam_base import EMsg, EUniverse, EResult
 from crypto import CryptoUtil
-from protobuf import steammessages_base_pb2
+from protobuf import steammessages_base_pb2, steammessages_clientserver_pb2
 import msg_base
 import struct, binascii, StringIO, zipfile
 
@@ -27,6 +27,8 @@ class SteamProtocol(protocol.Protocol):
 	def connectionMade(self):
 		self.session_key = None
 		self.netfilter = None
+		self.session_id = None
+		self.steamid = None
 		self.message_length = 0
 		self.state = SteamProtocol.StateMagic
 		self.buffer = ''
@@ -69,6 +71,11 @@ class SteamProtocol(protocol.Protocol):
 			self.state = SteamProtocol.StateMagic
 
 	def sendMessage(self, msg):
+		if self.session_id:
+			msg.header.session_id = self.session_id
+		if self.steamid:
+			msg.header.steamid = self.steamid
+		
 		msg = msg.serialize()
 		if self.netfilter:
 			msg = self.netfilter.process_outgoing(msg)
@@ -86,6 +93,8 @@ class SteamProtocol(protocol.Protocol):
 			self.channelEncryptRequest(msg)
 		elif emsg == EMsg.ChannelEncryptResult:
 			self.channelEncryptResult(msg)
+		elif emsg == EMsg.ClientLogOnResponse:
+			self.logonResponse(msg)
 		elif emsg == EMsg.Multi:
 			self.splitMultiMessage(msg)
 	
@@ -126,6 +135,21 @@ class SteamProtocol(protocol.Protocol):
 		self.netfilter = NetEncryption(self.session_key)
 		self.factory.client.handleConnected()
 	
+	def heartbeat(self):
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientHeartBeat, EMsg.ClientHeartBeat)
+		self.sendMessage(message)
+		
+	def logonResponse(self, msg):
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogonResponse)
+		message.parse(msg)
+		
+		self.session_id = message.proto_header.client_sessionid
+		self.steamid = message.proto_header.steamid
+		
+		delay = message.body.out_of_game_heartbeat_seconds
+		self.heartbeat = task.LoopingCall(self.heartbeat)
+		self.heartbeat.start(delay)
+
 	def splitMultiMessage(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_base_pb2.CMsgMulti)
 		message.parse(msg)
@@ -140,7 +164,7 @@ class SteamProtocol(protocol.Protocol):
 		i = 0
 		while i < len(z):
 			sub_size, = struct.unpack_from('I', z, i)
-			self.dispatchMessage(z[i:i+sub_size])
+			self.dispatchMessage(z[i+4:i+4+sub_size])
 			i += sub_size + 4
 			
 		

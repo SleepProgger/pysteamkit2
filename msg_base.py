@@ -21,6 +21,32 @@ class ProtobufMsgHdr:
 	def __init__(self):
 		self.emsg = EMsg.Invalid
 		self.proto = steammessages_base_pb2.CMsgProtoBufHeader()
+		
+	@property
+	def session_id(self):
+		return self.proto.client_sessionid
+	@session_id.setter
+	def session_id(self, value):
+		self.proto.client_sessionid = value
+	@property
+	def steamid(self):
+		return self.proto.steamid
+	@steamid.setter
+	def steamid(self, value):
+		self.proto.steamid = value
+	@property
+	def source_jobid(self):
+		return self.proto.jobid_source
+	@source_jobid.setter
+	def source_jobid(self, value):
+		self.proto.jobid_source = value
+	@property
+	def target_jobid(self):
+		return self.proto.jobid_target
+	@target_jobid.setter
+	def target_jobid(self, value):
+		self.proto.jobid_target = value
+
 	def parse(self, buffer):
 		self.emsg, len = struct.unpack_from('II', buffer)
 		self.proto.ParseFromString(buffer[ProtobufMsgHdr.HeaderLength:])
