@@ -28,8 +28,8 @@ class CryptoUtil:
 		crypted_iv = aes.encrypt(iv)
 		
 		aes = AES.new(key, AES.MODE_CBC, iv)
-		
-		return crypted_iv + aes.encrypt(pad(input))
+		encrypted = aes.encrypt(pad(input))
+		return crypted_iv + encrypted
 		
 	@staticmethod
 	def symmetricDecrypt(input, key):
@@ -37,6 +37,4 @@ class CryptoUtil:
 		decrypted_iv = aes.decrypt(input[:BS])
 
 		aes = AES.new(key, AES.MODE_CBC, decrypted_iv)
-		
 		return unpad(aes.decrypt(input[BS:]))
-

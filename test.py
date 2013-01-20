@@ -4,7 +4,6 @@ from twisted.internet import defer, task
 from twisted.python import failure
 from client import SteamClient
 
-
 class SteamClientHandler:
 	def handleMessage(self, msg):
 		pass
@@ -15,9 +14,15 @@ def main(reactor, username="", password=""):
 
 	try:
 		yield client.connect()
-		print 'ok'
+		yield client.login_anonymous()
+		print('ok')
+		
+		#get rid of me
+		holdOpen = defer.Deferred()
+		yield holdOpen
+		
 	except:
-		print 'not ok'
+		print('not ok')
 		failure.Failure().printTraceback()
 
 task.react(main, sys.argv[1:])
