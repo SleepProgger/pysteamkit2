@@ -22,8 +22,6 @@ class NetEncryption():
 		return CryptoUtil.symmetricEncrypt(data, self.key)
 
 class SteamProtocol(protocol.Protocol):
-	StateMagic = 0
-	StateMessage = 1
 
 	@staticmethod
 	def get_msg(emsg):
@@ -38,7 +36,6 @@ class SteamProtocol(protocol.Protocol):
 		self.session_id = None
 		self.steamid = None
 		self.message_length = 0
-		self.state = SteamProtocol.StateMagic
 		self.buffer = ''
 		
 	def connectionLost(self, reason):
@@ -52,34 +49,25 @@ class SteamProtocol(protocol.Protocol):
 		
 		print("Got data length: ", len(data), "Buffer is length: ", len(self.buffer))
 		
-		if self.state == SteamProtocol.StateMagic and len(self.buffer) >= 8:
+		while len(self.buffer) >= 8:
 			length, magic = struct.unpack_from('I4s', data)
 			
 			if magic != 'VT01':
 				raise ProtocolError('Invalid packet magic')
-			
-			# Prepare the buffer for the message
-			self.buffer = self.buffer[8:]
-			self.message_length = length
-			self.state = SteamProtocol.StateMessage
-			
-			print("Got magic: ", magic, "length: ", length)
-		
-		if self.state == SteamProtocol.StateMessage and len(self.buffer) >= self.message_length:
-			buffer = self.buffer[:self.message_length]
-			
+			if len(self.buffer) < length + 8:
+				break
+				
+			buffer = self.buffer[8:length+8]
 			if self.netfilter:
 				buffer = self.netfilter.process_incoming(buffer)
-			
+				
 			try:
 				self.dispatchMessage(buffer)
 			except:
 				self.transport.loseConnection()
 				raise
 
-			# Clear buffer, ready state for next message
-			self.buffer = self.buffer[self.message_length:]
-			self.state = SteamProtocol.StateMagic
+			self.buffer = self.buffer[length+8:]
 
 	def sendMessage(self, msg):
 		if self.session_id:
