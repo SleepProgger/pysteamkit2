@@ -210,7 +210,7 @@ class TCPConnection(Connection):
 		print("Got data length: ", len(data), "Buffer is length: ", len(self.read_buffer))
 		
 		while len(self.read_buffer) >= 8:
-			length, magic = struct.unpack_from('I4s', data)
+			length, magic = struct.unpack_from('I4s', self.read_buffer)
 			
 			if magic != 'VT01':
 				raise ProtocolError('Invalid packet magic')
