@@ -5,7 +5,7 @@ from steamid import SteamID
 from steam_base import EMsg, EUniverse, EResult
 from util import Util
 import msg_base
-import struct, binascii, StringIO, zipfile, socket
+import struct, binascii, StringIO, zipfile, socket, gevent
 
 class ProtocolError(Exception):
 	"""
@@ -35,6 +35,8 @@ class Connection(object):
 		
 		self.session_id = None
 		self.steamid = None
+		
+		self.client.register_message(EMsg.ChannelEncryptResult, msg_base.Message, msg_base.MsgHdr, msg_base.ChannelEncryptResult)
 		
 	def connect(self, address):
 		pass
@@ -66,9 +68,7 @@ class Connection(object):
 		print("dispatch_message", emsg, len(msg))
 		
 		if emsg == EMsg.ChannelEncryptRequest:
-			self.channel_encrypt_request(msg)
-		elif emsg == EMsg.ChannelEncryptResult:
-			self.channel_encrypt_result(msg)
+			gevent.spawn(self.channel_encrypt_request, msg)
 		elif emsg == EMsg.ClientLogOnResponse:
 			self.logon_response(msg)
 		elif emsg == EMsg.Multi:
@@ -89,8 +89,8 @@ class Connection(object):
 			
 		print("Channel encrypt request. Proto: ", message.body.protocol_version, "Universe: ", message.body.universe)
 		
-		self.session_key = CryptoUtil.create_session_key()
-		crypted_key = CryptoUtil.rsa_encrypt(self.session_key)
+		session_key = CryptoUtil.create_session_key()
+		crypted_key = CryptoUtil.rsa_encrypt(session_key)
 		key_crc = binascii.crc32(crypted_key) & 0xFFFFFFFF
 		
 		response = msg_base.Message(msg_base.MsgHdr, msg_base.ChannelEncryptResponse, EMsg.ChannelEncryptResponse)
@@ -100,14 +100,12 @@ class Connection(object):
 
 		self.send_message(response)
 		
-	def channel_encrypt_result(self, msg):
-		message = msg_base.Message(msg_base.MsgHdr, msg_base.ChannelEncryptResult)
-		message.parse(msg)
-
-		if message.body.result != EResult.OK:
+		encrypt_result = self.client.wait_for_message(EMsg.ChannelEncryptResult)
+		
+		if encrypt_result.body.result != EResult.OK:
 			raise ProtocolError('Unable to negotiate channel encryption')
 		
-		self.netfilter = NetEncryption(self.session_key)
+		self.netfilter = NetEncryption(session_key)
 		self.client.handle_connected()
 	
 	def heartbeat(self):

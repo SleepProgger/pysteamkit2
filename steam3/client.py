@@ -10,7 +10,6 @@ import struct
 class SteamClient():
 	def __init__(self, callback):
 		self.callback = callback
-		self.connection = TCPConnection(self)
 
 		self.message_constructors = dict()
 		self.message_events = dict()
@@ -19,7 +18,10 @@ class SteamClient():
 		self.steam2_ticket = None
 		self.session_token = None
 	
+		self.connection = TCPConnection(self)
+			
 		self.connection_event = Event()
+		
 		self.register_message(EMsg.ClientLogOnResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLogonResponse)
 		self.register_message(EMsg.ClientSessionToken, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientSessionToken)
 
