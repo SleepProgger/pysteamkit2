@@ -22,10 +22,10 @@ class NetEncryption():
 		self.key = key
 		
 	def process_incoming(self, data):
-		return CryptoUtil.symmetricDecrypt(data, self.key)
+		return CryptoUtil.symmetric_decrypt(data, self.key)
 	
 	def process_outgoing(self, data):
-		return CryptoUtil.symmetricEncrypt(data, self.key)
+		return CryptoUtil.symmetric_encrypt(data, self.key)
 
 class Connection(object):
 	def __init__(self, client):
@@ -45,10 +45,10 @@ class Connection(object):
 	def write(self, message):
 		pass
 		
-	def getBoundAddress(self):
+	def get_bound_address(self):
 		pass
 		
-	def sendMessage(self, msg):
+	def send_message(self, msg):
 		if self.session_id:
 			msg.header.session_id = self.session_id
 		if self.steamid:
@@ -60,24 +60,24 @@ class Connection(object):
 		buffer = struct.pack('I4s', len(msg), 'VT01') + msg
 		self.write(buffer)
 		
-	def dispatchMessage(self, msg):
+	def dispatch_message(self, msg):
 		emsg_real, = struct.unpack_from('I', msg)
 		emsg = Util.get_msg(emsg_real)
-		print("dispatchMessage: ", emsg, len(msg))
+		print("dispatch_message", emsg, len(msg))
 		
 		if emsg == EMsg.ChannelEncryptRequest:
-			self.channelEncryptRequest(msg)
+			self.channel_encrypt_request(msg)
 		elif emsg == EMsg.ChannelEncryptResult:
-			self.channelEncryptResult(msg)
+			self.channel_encrypt_result(msg)
 		elif emsg == EMsg.ClientLogOnResponse:
-			self.logonResponse(msg)
+			self.logon_response(msg)
 		elif emsg == EMsg.Multi:
-			self.splitMultiMessage(msg)
+			self.split_multi_message(msg)
 			
-		self.client.handleMessage(emsg_real, msg)	
+		self.client.handle_message(emsg_real, msg)	
 	
 	
-	def channelEncryptRequest(self, msg):
+	def channel_encrypt_request(self, msg):
 		message = msg_base.Message(msg_base.MsgHdr, msg_base.ChannelEncryptRequest)
 		message.parse(msg)
 
@@ -89,8 +89,8 @@ class Connection(object):
 			
 		print("Channel encrypt request. Proto: ", message.body.protocol_version, "Universe: ", message.body.universe)
 		
-		self.session_key = CryptoUtil.createSessionKey()
-		crypted_key = CryptoUtil.rsaEncrypt(self.session_key)
+		self.session_key = CryptoUtil.create_session_key()
+		crypted_key = CryptoUtil.rsa_encrypt(self.session_key)
 		key_crc = binascii.crc32(crypted_key) & 0xFFFFFFFF
 		
 		response = msg_base.Message(msg_base.MsgHdr, msg_base.ChannelEncryptResponse, EMsg.ChannelEncryptResponse)
@@ -98,9 +98,9 @@ class Connection(object):
 		response.body.key_size = len(crypted_key)
 		response.payload = crypted_key + struct.pack('II', key_crc, 0)
 
-		self.sendMessage(response)
+		self.send_message(response)
 		
-	def channelEncryptResult(self, msg):
+	def channel_encrypt_result(self, msg):
 		message = msg_base.Message(msg_base.MsgHdr, msg_base.ChannelEncryptResult)
 		message.parse(msg)
 
@@ -108,13 +108,13 @@ class Connection(object):
 			raise ProtocolError('Unable to negotiate channel encryption')
 		
 		self.netfilter = NetEncryption(self.session_key)
-		self.client.handleConnected()
+		self.client.handle_connected()
 	
 	def heartbeat(self):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientHeartBeat, EMsg.ClientHeartBeat)
-		self.sendMessage(message)
+		self.send_message(message)
 		
-	def logonResponse(self, msg):
+	def logon_response(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogonResponse)
 		message.parse(msg)
 		
@@ -124,7 +124,7 @@ class Connection(object):
 		delay = message.body.out_of_game_heartbeat_seconds
 		self.heartbeat = core.timer(delay, self.heartbeat)
 
-	def splitMultiMessage(self, msg):
+	def split_multi_message(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_base_pb2.CMsgMulti)
 		message.parse(msg)
 		
@@ -138,7 +138,7 @@ class Connection(object):
 		i = 0
 		while i < len(payload):
 			sub_size, = struct.unpack_from('I', payload, i)
-			self.dispatchMessage(payload[i+4:i+4+sub_size])
+			self.dispatch_message(payload[i+4:i+4+sub_size])
 			i += sub_size + 4
 		
 class TCPConnection(Connection):
@@ -154,8 +154,8 @@ class TCPConnection(Connection):
 		self.socket = socket.socket()
 		self.socket.connect(address)
 
-		self.read_event = core.read_event(self.socket.fileno(), self.readData, persist=True)
-		self.write_event = core.write_event(self.socket.fileno(), self.writeData, persist=True)
+		self.read_event = core.read_event(self.socket.fileno(), self.__read_data, persist=True)
+		self.write_event = core.write_event(self.socket.fileno(), self.__write_data, persist=True)
 	
 	def disconnect(self):
 		self.cleanup()
@@ -176,9 +176,9 @@ class TCPConnection(Connection):
 			self.write_event.cancel()
 			self.write_event = None
 			
-		self.client.handleDisconnected(SocketException())
+		self.client.handle_disconnected(SocketException())
 		
-	def writeData(self, event, _evtype):
+	def __write_data(self, event, _evtype):
 		assert event is self.write_event
 		
 		if len(self.write_buffer) > 0:
@@ -190,7 +190,7 @@ class TCPConnection(Connection):
 				
 			self.write_buffer = self.write_buffer[bytes_written:]
 
-	def readData(self, event, _evtype):
+	def __read_data(self, event, _evtype):
 		assert event is self.read_event
 		
 		try:
@@ -203,9 +203,9 @@ class TCPConnection(Connection):
 			self.cleanup()
 			return
 			
-		self.dataReceived(data)
+		self.data_received(data)
 	
-	def dataReceived(self, data):
+	def data_received(self, data):
 		self.read_buffer += data
 		print("Got data length: ", len(data), "Buffer is length: ", len(self.read_buffer))
 		
@@ -222,7 +222,7 @@ class TCPConnection(Connection):
 				buffer = self.netfilter.process_incoming(buffer)
 				
 			try:
-				self.dispatchMessage(buffer)
+				self.dispatch_message(buffer)
 			except:
 				self.disconnect()
 				raise

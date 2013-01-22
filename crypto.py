@@ -9,18 +9,18 @@ unpad = lambda s : s[0:-ord(s[-1])]
 
 class CryptoUtil:
 	@staticmethod
-	def createSessionKey():
+	def create_session_key():
 		random = Random.new()
 		return random.read(32)
 	
 	@staticmethod
-	def rsaEncrypt(input):
+	def rsa_encrypt(input):
 		rsa = RSA.importKey(UniverseKeys.Public)
 		cipher = PKCS1_OAEP.new(rsa)
 		return cipher.encrypt(input)
 
 	@staticmethod
-	def symmetricEncrypt(input, key):
+	def symmetric_encrypt(input, key):
 		random = Random.new()
 		iv = random.read(16)
 		
@@ -32,7 +32,7 @@ class CryptoUtil:
 		return crypted_iv + encrypted
 		
 	@staticmethod
-	def symmetricDecrypt(input, key):
+	def symmetric_decrypt(input, key):
 		aes = AES.new(key, AES.MODE_ECB)
 		decrypted_iv = aes.decrypt(input[:BS])
 

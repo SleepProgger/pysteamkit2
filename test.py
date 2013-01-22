@@ -5,7 +5,7 @@ from util import Util
 import gevent
 
 class SteamClientHandler:
-	def handleMessage(self, emsg, msg):
+	def handle_message(self, emsg, msg):
 		emsg = Util.get_msg(emsg)
 
 def main():
@@ -13,9 +13,9 @@ def main():
 
 	def xyz():
 		print("Waiting for connect")
-		client.connectionEvent.wait()
+		client.connection_event.wait()
 		print("Waiting for logon")
-		message = client.waitForMessage(EMsg.ClientLogOnResponse)
+		message = client.wait_for_message(EMsg.ClientLogOnResponse)
 		print("xyz ", message.body.eresult)
 	gxyz = gevent.spawn(xyz)
 				
