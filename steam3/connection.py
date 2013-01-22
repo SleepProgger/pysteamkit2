@@ -1,16 +1,22 @@
-from twisted.internet import protocol, task
-from steam_base import EMsg, EUniverse, EResult
+from gevent import core
 from crypto import CryptoUtil
 from protobuf import steammessages_base_pb2, steammessages_clientserver_pb2
 from steamid import SteamID
+from steam_base import EMsg, EUniverse, EResult
+from util import Util
 import msg_base
-import struct, binascii, StringIO, zipfile
+import struct, binascii, StringIO, zipfile, socket
 
 class ProtocolError(Exception):
 	"""
 	Raised when an error has occurred in the Steam protocol
 	"""
 
+class SocketException(Exception):
+	"""
+	Socket error occurred
+	"""
+	
 class NetEncryption():
 	def __init__(self, key):
 		self.key = key
@@ -21,54 +27,27 @@ class NetEncryption():
 	def process_outgoing(self, data):
 		return CryptoUtil.symmetricEncrypt(data, self.key)
 
-class SteamProtocol(protocol.Protocol):
-
-	@staticmethod
-	def get_msg(emsg):
-		return emsg & ~0x80000000
-	@staticmethod
-	def is_proto(emsg):
-		return emsg & 0x80000000 == 0x80000000
+class Connection(object):
+	def __init__(self, client):
+		self.client = client
 		
-	def connectionMade(self):
-		self.session_key = None
 		self.netfilter = None
+		
 		self.session_id = None
 		self.steamid = None
-		self.message_length = 0
-		self.buffer = ''
 		
-	def connectionLost(self, reason):
-		self.factory.client.handleDisconnected(reason)
+	def connect(self, address):
+		pass
+	
+	def disconnect(self):
+		pass
+		
+	def write(self, message):
+		pass
 		
 	def getBoundAddress(self):
-		return self.transport.getHost().host
+		pass
 		
-	def dataReceived(self, data):
-		self.buffer += data
-		
-		print("Got data length: ", len(data), "Buffer is length: ", len(self.buffer))
-		
-		while len(self.buffer) >= 8:
-			length, magic = struct.unpack_from('I4s', data)
-			
-			if magic != 'VT01':
-				raise ProtocolError('Invalid packet magic')
-			if len(self.buffer) < length + 8:
-				break
-				
-			buffer = self.buffer[8:length+8]
-			if self.netfilter:
-				buffer = self.netfilter.process_incoming(buffer)
-				
-			try:
-				self.dispatchMessage(buffer)
-			except:
-				self.transport.loseConnection()
-				raise
-
-			self.buffer = self.buffer[length+8:]
-
 	def sendMessage(self, msg):
 		if self.session_id:
 			msg.header.session_id = self.session_id
@@ -79,11 +58,11 @@ class SteamProtocol(protocol.Protocol):
 		if self.netfilter:
 			msg = self.netfilter.process_outgoing(msg)
 		buffer = struct.pack('I4s', len(msg), 'VT01') + msg
-		self.transport.write(buffer)
+		self.write(buffer)
 		
 	def dispatchMessage(self, msg):
 		emsg_real, = struct.unpack_from('I', msg)
-		emsg = SteamProtocol.get_msg(emsg_real)
+		emsg = Util.get_msg(emsg_real)
 		print("dispatchMessage: ", emsg, len(msg))
 		
 		if emsg == EMsg.ChannelEncryptRequest:
@@ -95,7 +74,7 @@ class SteamProtocol(protocol.Protocol):
 		elif emsg == EMsg.Multi:
 			self.splitMultiMessage(msg)
 			
-		self.factory.client.handleMessage(emsg_real, msg)	
+		self.client.handleMessage(emsg_real, msg)	
 	
 	
 	def channelEncryptRequest(self, msg):
@@ -129,7 +108,7 @@ class SteamProtocol(protocol.Protocol):
 			raise ProtocolError('Unable to negotiate channel encryption')
 		
 		self.netfilter = NetEncryption(self.session_key)
-		self.factory.client.handleConnected()
+		self.client.handleConnected()
 	
 	def heartbeat(self):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientHeartBeat, EMsg.ClientHeartBeat)
@@ -143,8 +122,7 @@ class SteamProtocol(protocol.Protocol):
 		self.steamid = SteamID(message.proto_header.steamid)
 		
 		delay = message.body.out_of_game_heartbeat_seconds
-		self.heartbeat = task.LoopingCall(self.heartbeat)
-		self.heartbeat.start(delay)
+		self.heartbeat = core.timer(delay, self.heartbeat)
 
 	def splitMultiMessage(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_base_pb2.CMsgMulti)
@@ -162,14 +140,91 @@ class SteamProtocol(protocol.Protocol):
 			sub_size, = struct.unpack_from('I', payload, i)
 			self.dispatchMessage(payload[i+4:i+4+sub_size])
 			i += sub_size + 4
-			
 		
-class SteamFactory(protocol.ClientFactory):
+class TCPConnection(Connection):
 	def __init__(self, client):
-		self.client = client
+		super(TCPConnection, self).__init__(client)
+		self.socket = None
+		self.write_buffer = ''
+		self.read_buffer = ''
+		self.read_event = None
+		self.write_event = None
 		
-	def buildProtocol(self, addr):
-		print('Connected to: ', addr)
-		p = SteamProtocol()
-		p.factory = self
-		return p
+	def connect(self, address):
+		self.socket = socket.socket()
+		self.socket.connect(address)
+
+		self.read_event = core.read_event(self.socket.fileno(), self.readData, persist=True)
+		self.write_event = core.write_event(self.socket.fileno(), self.writeData, persist=True)
+	
+	def disconnect(self):
+		self.cleanup()
+		
+	def write(self, message):
+		self.write_buffer = self.write_buffer + message
+		
+	def cleanup(self):
+		self.write_buffer = ''
+		self.read_buffer = ''
+		if self.socket:
+			self.socket.close()
+			self.socket = None
+		if self.read_event:
+			self.read_event.cancel()
+			self.read_event = None
+		if self.write_event:
+			self.write_event.cancel()
+			self.write_event = None
+			
+		self.client.handleDisconnected(SocketException())
+		
+	def writeData(self, event, _evtype):
+		assert event is self.write_event
+		
+		if len(self.write_buffer) > 0:
+			try:
+				bytes_written = self.socket.send(self.write_buffer)
+			except:
+				self.cleanup()
+				return
+				
+			self.write_buffer = self.write_buffer[bytes_written:]
+
+	def readData(self, event, _evtype):
+		assert event is self.read_event
+		
+		try:
+			data = self.socket.recv(4096)
+		except:
+			self.cleanup()
+			return
+			
+		if len(data) == 0:
+			self.cleanup()
+			return
+			
+		self.dataReceived(data)
+	
+	def dataReceived(self, data):
+		self.read_buffer += data
+		print("Got data length: ", len(data), "Buffer is length: ", len(self.read_buffer))
+		
+		while len(self.read_buffer) >= 8:
+			length, magic = struct.unpack_from('I4s', data)
+			
+			if magic != 'VT01':
+				raise ProtocolError('Invalid packet magic')
+			if len(self.read_buffer) < length + 8:
+				break
+				
+			buffer = self.read_buffer[8:length+8]
+			if self.netfilter:
+				buffer = self.netfilter.process_incoming(buffer)
+				
+			try:
+				self.dispatchMessage(buffer)
+			except:
+				self.disconnect()
+				raise
+
+			self.read_buffer = self.read_buffer[length+8:]
