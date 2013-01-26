@@ -2,3 +2,6 @@ protobuf-2.5.0rc1
 
 syntax: glob
 *.pyc
+*.bin
+*.exe
+*.orig

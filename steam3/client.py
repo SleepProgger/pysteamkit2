@@ -9,11 +9,13 @@ import msg_base
 import struct
 
 class SteamClient():
-	def __init__(self, callback=None):
+	def __init__(self, callback):
+		self.callback = callback
 		self.listeners = []
 		self.message_constructors = dict()
 		self.message_events = dict()
 
+		self.username = None
 		self.jobid = 0
 		self.steam2_ticket = None
 		self.session_token = None
@@ -21,9 +23,7 @@ class SteamClient():
 		self.connection = TCPConnection(self)
 		self.connection_event = Event()
 		
-		if callback:
-			self.register_listener(callback)
-
+		self.register_listener(callback)
 		self.steamapps = SteamApps(self)
 		
 		self.register_message(EMsg.ClientLogOnResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLogonResponse)
@@ -33,6 +33,9 @@ class SteamClient():
 		self.connection.connect(address)
 		self.connection_event.wait()
 	
+	def disconnect(self):
+		self.connection.disconnect()
+		
 	def handle_connected(self):
 		self.connection_event.set()
 		print('Connection established')
@@ -44,6 +47,12 @@ class SteamClient():
 		for k in self.message_events.keys():
 			if self.message_events[k]:
 				self.message_events[k].set_exception(reason)
+				self.message_events[k] = None
+		
+		self.username = None
+		self.jobid = 0
+		self.steam2_ticket = None
+		self.session_token = None
 
 	def register_listener(self, listener):
 		self.listeners.append(listener)
@@ -98,7 +107,9 @@ class SteamClient():
 			logonResponse = self.wait_for_message(EMsg.ClientLogOnResponse)
 			return logonResponse.body.eresult
 
-	def login(self, username=None, password=None):
+	def login(self, username=None, password=None, login_key=None, auth_code=None):
+		self.username = username
+		
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogon, EMsg.ClientLogon)
 
 		message.proto_header.client_sessionid = 0
@@ -111,7 +122,18 @@ class SteamClient():
 		
 		message.body.account_name = username
 		message.body.password = password
+		if login_key:
+			message.body.login_key = login_key
+		if auth_code:
+			message.body.auth_code = auth_code
 		
+		sentryfile = self.callback.get_sentry_file(username)
+		if sentryfile:
+			message.body.sha_sentryfile = Util.sha1_hash(sentryfile)
+			message.body.eresult_sentryfile = EResult.OK 
+		else:
+			message.body.eresult_sentryfile = EResult.FileNotFound
+				
 		localip = self.connection.get_bound_address()
 		message.body.obfustucated_private_ip = 1111
 
@@ -140,6 +162,8 @@ class SteamClient():
 		
 		if emsg == EMsg.ClientLogOnResponse:
 			self.handle_client_logon(msg)
+		elif emsg == EMsg.ClientUpdateMachineAuth:
+			self.handle_update_machine_auth(msg)
 		elif emsg == EMsg.ClientSessionToken:
 			self.handle_session_token(msg)
 			
@@ -164,7 +188,31 @@ class SteamClient():
 			
 		if message.body.steam2_ticket:
 			self.steam2_ticket = message.body.steam2_ticket
-			
+	
+	def handle_update_machine_auth(self, msg):
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientUpdateMachineAuth)
+		message.parse(msg)
+		
+		sentryfile = message.body.bytes
+		hash = Util.sha1_hash(sentryfile)
+		
+		self.callback.store_sentry_file(self.username, sentryfile)
+		
+		response = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientUpdateMachineAuthResponse, EMsg.ClientUpdateMachineAuthResponse)
+		response.header.target_jobid = message.header.source_jobid
+		
+		response.body.cubwrote = message.body.cubtowrite
+		response.body.eresult = EResult.OK
+		response.body.filename = message.body.filename
+		response.body.filesize = message.body.cubtowrite
+		response.body.getlasterror = 0
+		response.body.offset = message.body.offset
+		response.body.sha_file = hash
+		response.body.otp_identifier = message.body.otp_identifier
+		response.body.otp_type = message.body.otp_type
+		
+		self.connection.send_message(response)
+		
 	def handle_session_token(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientSessionToken)
 		message.parse(msg)

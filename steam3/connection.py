@@ -32,11 +32,20 @@ class Connection(object):
 		self.client = client
 		
 		self.netfilter = None
+		self.heartbeat = None
 		
 		self.session_id = None
 		self.steamid = None
 		
 		self.client.register_message(EMsg.ChannelEncryptResult, msg_base.Message, msg_base.MsgHdr, msg_base.ChannelEncryptResult)
+		
+	def cleanup(self):
+		if self.heartbeat:
+			self.heartbeat.cancel()
+			
+		self.netfilter = None
+		self.session_id = None
+		self.steamid = None
 		
 	def connect(self, address):
 		pass
@@ -115,11 +124,12 @@ class Connection(object):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogonResponse)
 		message.parse(msg)
 		
-		self.session_id = message.proto_header.client_sessionid
-		self.steamid = SteamID(message.proto_header.steamid)
+		if message.body.eresult == EResult.OK:
+			self.session_id = message.proto_header.client_sessionid
+			self.steamid = SteamID(message.proto_header.steamid)
 		
-		delay = message.body.out_of_game_heartbeat_seconds
-		self.heartbeat = core.timer(delay, self.heartbeat)
+			delay = message.body.out_of_game_heartbeat_seconds
+			self.heartbeat = core.timer(delay, self.heartbeat)
 
 	def split_multi_message(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_base_pb2.CMsgMulti)
@@ -162,6 +172,7 @@ class TCPConnection(Connection):
 		self.write_buffer.append(message)
 		
 	def cleanup(self):
+		super(TCPConnection, self).cleanup()
 		self.write_buffer = []
 		self.read_buffer = ''
 		if self.socket:
@@ -186,7 +197,7 @@ class TCPConnection(Connection):
 			except:
 				self.cleanup()
 				return
-				
+
 			if bytes_written < len(self.write_buffer[0]):
 				self.write_buffer[0] = buffer[bytes_written:]
 			else:

@@ -374,6 +374,9 @@ class EMsg:
 	ClientGetDepotDecryptionKey = 5438
 	ClientGetDepotDecryptionKeyResponse = 5439
 		
+	ClientUpdateMachineAuth = 5537
+	ClientUpdateMachineAuthResponse = 5538
+		
 class EUniverse:
 	Invalid = 0
 	Public = 1
