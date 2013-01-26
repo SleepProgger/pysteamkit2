@@ -74,7 +74,7 @@ class SteamClient():
 	
 	def wait_for_job(self, message, emsg):
 		jobid = self.jobid
-		self.jobid = self.jobid + 1
+		self.jobid += 1
 		message.header.source_jobid = jobid
 
 		self.connection.send_message(message)

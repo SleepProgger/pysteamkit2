@@ -1,7 +1,7 @@
 from steam_base import EMsg, EResult, EUniverse, EAccountType
 from protobuf import steammessages_clientserver_pb2
 from util import Util
-import msg_base
+import msg_base, vdf
 
 class SteamApps():
 	def __init__(self, client):
@@ -53,8 +53,26 @@ class SteamApps():
 		
 		response = self.client.wait_for_job(message, EMsg.PICSProductInfoResponse)
 
-		print(response, response.body)
+		for app in response.body.apps:
+			self.app_cache[app.appid] = vdf.loads(app.buffer)
+
+		for package in response.body.packages:
+			kv = vdf.loadbinary(package.buffer[4:])
+			self.package_cache[package.packageid] = kv[package.packageid][str(package.packageid)]
+
 		return response.body
+
+	def has_license_for_app(self, appid):
+		for (packageid, package) in self.package_cache.items():
+			if appid in package['appids'].values():
+				return True
+		return False
+		
+	def has_license_for_depot(self, depotid):
+		for (packageid, package) in self.package_cache.items():
+			if depotid in package['depotids'].values():
+				return True
+		return False
 		
 	def handle_message(self, emsg_real, msg):
 		emsg = Util.get_msg(emsg_real)

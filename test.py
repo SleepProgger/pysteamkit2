@@ -70,7 +70,15 @@ def main(args):
 	print("Licenses: ", licenses)
 	
 	product_info = steamapps.get_product_info(app_ids = [args.appid], package_ids = licenses)
-	print("Raw product info: ", product_info)
-	print("Packages: ", [x.packageid for x in product_info.packages])
+	valid_apps = [x.appid for x in product_info.apps]
+	valid_packages = [x.packageid for x in product_info.packages]
+	
+	if not args.appid in valid_apps:
+		print("Could not find an app for id %d" % (args.appid,))
+		return
 
+	if not steamapps.has_license_for_app(args.appid):
+		print("You do not have a license for app %d" % (args.appid,))
+
+	
 main(args)
