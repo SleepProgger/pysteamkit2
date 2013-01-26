@@ -15,7 +15,7 @@ class MsgHdr:
 	def serialize(self):
 		return struct.pack(MsgHdr.HeaderFmt, self.emsg, self.target_jobid, self.source_jobid)
 
-class ProtobufMsgHdr:
+class ProtobufMsgHdr(object):
 	HeaderFmt = 'II'
 	HeaderLength = struct.calcsize(HeaderFmt)
 	def __init__(self):
@@ -49,7 +49,7 @@ class ProtobufMsgHdr:
 
 	def parse(self, buffer):
 		self.emsg, len = struct.unpack_from('II', buffer)
-		self.proto.ParseFromString(buffer[ProtobufMsgHdr.HeaderLength:])
+		self.proto.ParseFromString(buffer[ProtobufMsgHdr.HeaderLength:ProtobufMsgHdr.HeaderLength+len])
 		return ProtobufMsgHdr.HeaderLength + len
 	def serialize(self):
 		headerproto = self.proto.SerializeToString()
@@ -67,7 +67,7 @@ class Message:
 	def serialize(self):
 		return self.header.serialize() + self.body.serialize() + (self.payload or '')
 
-class ProtobufMessage:
+class ProtobufMessage(object):
 	def __init__(self, body, emsg=EMsg.Invalid):
 		self.header = ProtobufMsgHdr()
 		self.body = body()

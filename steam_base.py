@@ -363,6 +363,17 @@ class EMsg:
 
 	ClientLogon = 5514
 
+	PICSBase = 8900
+	PICSChangesSinceRequest = 8901
+	PICSChangesSinceResponse = 8902
+	PICSProductInfoRequest = 8903
+	PICSProductInfoResponse = 8904
+	PICSAccessTokenRequest = 8905
+	PICSAccessTokenResponse = 8906
+	
+	ClientGetDepotDecryptionKey = 5438
+	ClientGetDepotDecryptionKeyResponse = 5439
+		
 class EUniverse:
 	Invalid = 0
 	Public = 1

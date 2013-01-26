@@ -54,13 +54,12 @@ class Connection(object):
 		if self.session_id:
 			msg.header.session_id = self.session_id
 		if self.steamid:
-			msg.header.steamid = self.steamid
+			msg.header.steamid = self.steamid.steamid
 		
 		msg = msg.serialize()
 		if self.netfilter:
 			msg = self.netfilter.process_outgoing(msg)
-		buffer = struct.pack('I4s', len(msg), 'VT01') + msg
-		self.write(buffer)
+		self.write(msg)
 		
 	def dispatch_message(self, msg):
 		emsg_real, = struct.unpack_from('I', msg)
@@ -143,7 +142,7 @@ class TCPConnection(Connection):
 	def __init__(self, client):
 		super(TCPConnection, self).__init__(client)
 		self.socket = None
-		self.write_buffer = ''
+		self.write_buffer = []
 		self.read_buffer = ''
 		self.read_event = None
 		self.write_event = None
@@ -159,10 +158,11 @@ class TCPConnection(Connection):
 		self.cleanup()
 		
 	def write(self, message):
-		self.write_buffer = self.write_buffer + message
+		message = struct.pack('I4s', len(message), 'VT01') + message
+		self.write_buffer.append(message)
 		
 	def cleanup(self):
-		self.write_buffer = ''
+		self.write_buffer = []
 		self.read_buffer = ''
 		if self.socket:
 			self.socket.close()
@@ -181,12 +181,16 @@ class TCPConnection(Connection):
 		
 		if len(self.write_buffer) > 0:
 			try:
-				bytes_written = self.socket.send(self.write_buffer)
+				buffer = self.write_buffer[0]
+				bytes_written = self.socket.send(buffer)
 			except:
 				self.cleanup()
 				return
 				
-			self.write_buffer = self.write_buffer[bytes_written:]
+			if bytes_written < len(self.write_buffer[0]):
+				self.write_buffer[0] = buffer[bytes_written:]
+			else:
+				self.write_buffer.pop(0)
 
 	def __read_data(self, event, _evtype):
 		assert event is self.read_event

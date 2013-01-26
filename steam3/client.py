@@ -4,23 +4,27 @@ from protobuf import steammessages_clientserver_pb2
 from connection import TCPConnection
 from steamid import SteamID
 from util import Util
+from steamapps import SteamApps
 import msg_base
 import struct
 
 class SteamClient():
-	def __init__(self, callback):
-		self.callback = callback
-
+	def __init__(self, callback=None):
+		self.listeners = []
 		self.message_constructors = dict()
 		self.message_events = dict()
-		self.job_events = dict()
-		
+
+		self.jobid = 0
 		self.steam2_ticket = None
 		self.session_token = None
 	
 		self.connection = TCPConnection(self)
-			
 		self.connection_event = Event()
+		
+		if callback:
+			self.register_listener(callback)
+
+		self.steamapps = SteamApps(self)
 		
 		self.register_message(EMsg.ClientLogOnResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLogonResponse)
 		self.register_message(EMsg.ClientSessionToken, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientSessionToken)
@@ -41,6 +45,9 @@ class SteamClient():
 			if self.message_events[k]:
 				self.message_events[k].set_exception(reason)
 
+	def register_listener(self, listener):
+		self.listeners.append(listener)
+		
 	def register_message(self, emsg, container, header, body=None):
 		self.message_constructors[emsg] = (container, header, body)
 		self.message_events[emsg] = None
@@ -56,15 +63,19 @@ class SteamClient():
 		
 		return async_result.get()
 	
-	def register_job(self, message, jobid):
+	def wait_for_job(self, message, emsg):
 		jobid = self.jobid
 		self.jobid = self.jobid + 1
-		
 		message.header.source_jobid = jobid
-		return jobid
+
+		self.connection.send_message(message)
 		
-	def wait_for_job(self, jobid, container, header, body):
-		pass
+		jobid_parsed = -1
+		while jobid_parsed != jobid:
+			message = self.wait_for_message(emsg)
+			jobid_parsed = message.header.target_jobid
+			
+		return message
 
 	@property
 	def steamid(self):
@@ -121,15 +132,19 @@ class SteamClient():
 			self.wait_for_message(EMsg.ClientSessionToken)
 			return self.session_token
 			
-		pass
+		return None
 
 	def handle_message(self, emsg_real, msg):
 		emsg = Util.get_msg(emsg_real)
+		print("EMsg is ", Util.lookup_enum(EMsg, emsg))
 		
 		if emsg == EMsg.ClientLogOnResponse:
 			self.handle_client_logon(msg)
 		elif emsg == EMsg.ClientSessionToken:
 			self.handle_session_token(msg)
+			
+		for listener in self.listeners:
+			listener.handle_message(emsg_real, msg)
 			
 		if emsg in self.message_events and self.message_events[emsg]:
 			constructor = self.message_constructors[emsg]
@@ -141,8 +156,7 @@ class SteamClient():
 			
 			self.message_events[emsg].set(message)
 			self.message_events[emsg] = None
-			
-		self.callback.handle_message(emsg_real, msg)
+		
 
 	def handle_client_logon(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogonResponse)
