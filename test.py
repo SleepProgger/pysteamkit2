@@ -6,6 +6,7 @@ from gevent.pool import Pool
 from steam3.client import SteamClient
 from steam3.cdn_client import CDNClient
 from steam_base import EResult, EMsg, EServerType
+from depot_manifest import DepotManifest
 from util import Util
 
 parser = argparse.ArgumentParser(description='DepotDownloader downloads depots.')
@@ -41,38 +42,29 @@ class SteamClientHandler:
 
 class CDNClientPool(object):
 	def __init__(self, servers, app_ticket, steamid):
-		self.clients = [CDNClient(ip, port, app_ticket, steamid) for (ip, port) in servers]
+		self.clients = [CDNClient(ip, port, app_ticket, steamid) for (ip, port, load) in servers]
 		self.client_pool = []
 		
-	def get_clients(self, num, depot):		
-		while len(self.client_pool) < num and len(self.clients) > 0:
+	def get_client(self, depot):
+		while len(self.client_pool) > 0:
+			client = self.client_pool.pop(0)
+			
+			if client.app_ticket or client.depot == depot or client.auth_depotid(depot):
+				return client
+		
+		while len(self.clients) > 0:
 			client = self.clients.pop(0)
 			
 			if client.initialize():
 				if client.app_ticket:
 					client.auth_appticket()
-					
-				self.client_pool.append(client)
+				if client.app_ticket or client.depot == depot or client.auth_depotid(depot):
+					return client
+				
+		raise Exception("Exhausted CDN client pool")
 		
-		num = min(num, len(self.client_pool))
-		if num == 0:
-			raise Exception("Exhausted CDN client pool")
-
-		clients = []
-		while len(clients) < num and len(self.client_pool) > 0:
-			client = self.client_pool.pop(0)
-
-			if client.app_ticket or client.depot == depot or client.auth_depotid(depot):
-				clients.append(client)
-
-		if len(clients) == 0:
-			raise Exception("Unable to find any working CDN clients")
-			
-		return clients
-		
-	def return_clients(self, clients):
-		for client in clients:
-			self.client_pool.append(client)
+	def return_client(self, client):
+		self.client_pool.append(client)
 
 def get_depots_for_app(appid, filter):
 	return [int(key) for key,values in steamapps.app_cache[appid]['depots'].iteritems() if key.isdigit() and (not filter or int(key) in filter)]
@@ -88,10 +80,10 @@ def get_depot_key(appid, depotid):
 	return (depotid, depot_key_result.depot_encryption_key)
 	
 def get_depot_manifest(depotid, manifestid):
-	clients = content_client_pool.get_clients(1, depotid)
-	(status, manifest) = clients[0].download_depot_manifest(depotid, manifestid)
+	client = content_client_pool.get_client(depotid)
+	(status, manifest) = client.download_depot_manifest(depotid, manifestid)
 	if manifest:
-		content_client_pool.return_clients(clients)
+		content_client_pool.return_client(client)
 		return (depotid, manifest, status)
 	return (depotid, None, status)
 		
@@ -161,7 +153,7 @@ def main(args):
 		return
 	
 	depot_keys = dict()
-	depot_manifests = []
+	depot_manifest_ids = []
 	
 	print("Depots found:")
 	for depotid in depots:
@@ -176,17 +168,17 @@ def main(args):
 		elif encrypted_manifests and encrypted_manifests.get(args.branch):
 			encrypted_gid = encrypted_manifests[args.branch]
 
-		depot_manifests.append((depotid, manifest))
+		depot_manifest_ids.append((depotid, manifest))
 
-	if len(depot_manifests) == 0:
+	if len(depot_manifest_ids) == 0:
 		print("Unable to find any downloadable depots for app %d branch %s" % (args.appid,args.branch))
 		return
 		
-	print("Total %d manifests" % (len(depot_manifests),))
+	print("Total %d manifests" % (len(depot_manifest_ids),))
 	
 	print("Fetching decryption keys")
 	pool = Pool(4)
-	key_fetch = [pool.spawn(get_depot_key, args.appid, depotid) for (depotid, manifest) in depot_manifests]
+	key_fetch = [pool.spawn(get_depot_key, args.appid, depotid) for (depotid, manifest) in depot_manifest_ids]
 	pool.join()
 	
 	for job in key_fetch:
@@ -215,12 +207,13 @@ def main(args):
 	
 	print("Downloading depot manifests")
 	depot_manifests_retrieved = []
+	depot_manifests = []
 	num_tries = 0
 	
-	while len(depot_manifests_retrieved) < len(depot_manifests) and num_tries < 4:
+	while len(depot_manifests_retrieved) < len(depot_manifest_ids) and num_tries < 4:
 		num_tries += 1
 		pool = Pool(4)
-		manifest_fetch = [pool.spawn(get_depot_manifest, depotid, manifestid) for (depotid, manifestid) in depot_manifests if not depotid in depot_manifests_retrieved]
+		manifest_fetch = [pool.spawn(get_depot_manifest, depotid, manifestid) for (depotid, manifestid) in depot_manifest_ids if not depotid in depot_manifests_retrieved]
 		pool.join()
 		
 		for job in manifest_fetch:
@@ -228,6 +221,15 @@ def main(args):
 			if manifest:
 				print("Got manifest for %d" % (depotid,))
 				depot_manifests_retrieved.append(depotid)
+				
+				depot_manifest = DepotManifest()
+				depot_manifest.parse(manifest)
+				
+				if not depot_manifest.decrypt_filenames(depot_keys[depotid]):
+					print("Could not decrypt depot manifest for %d" % (depotid,))
+					raise Exception("Unable to decrypt")
+					
+				depot_manifests.append((depotid, depot_manifest))
 			elif status == 401:
 				print("Did not have sufficient access to download manifest for %d" % (depotid,))
 				raise Exception("Insufficent privileges")
@@ -235,9 +237,9 @@ def main(args):
 				print("Missed %d" % (depotid,))
 			
 	
-	for (depotid, manifestid) in depot_manifests:
+	for (depotid, manifest) in depot_manifests:
 		depot = get_depot(args.appid, depotid)
 		print("Downloading \"%s\"" % (depot['name'],))
-		print("Processing %d %s" % (depotid, manifestid))
+		print("Processing %d %s" % (depotid, manifest))
 
 main(args)

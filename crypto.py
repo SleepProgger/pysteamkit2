@@ -1,6 +1,8 @@
 from steam_base import UniverseKeys
 from Crypto.PublicKey import RSA
+from Crypto.Hash import SHA
 from Crypto.Cipher import PKCS1_OAEP, AES
+from Crypto.Signature import PKCS1_v1_5
 from Crypto import Random
 
 BS = 16
@@ -19,6 +21,14 @@ class CryptoUtil:
 		cipher = PKCS1_OAEP.new(rsa)
 		return cipher.encrypt(input)
 
+	@staticmethod
+	def rsa_verify(input, signature):
+		rsa = RSA.importKey(UniverseKeys.Public)
+		verifier = PKCS1_v1_5.new(rsa)
+		h = SHA.new()
+		h.update(input)
+		return verifier.verify(h, signature)
+		
 	@staticmethod
 	def symmetric_encrypt(input, key):
 		random = Random.new()

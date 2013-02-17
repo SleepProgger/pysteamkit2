@@ -1,6 +1,8 @@
 from crypto import CryptoUtil
 from util import Util
 from urllib import urlencode
+from gevent import socket
+from operator import itemgetter
 import vdf, struct, urllib2
 
 
@@ -93,7 +95,7 @@ class CDNClient(object):
 			return (None, None)
 		
 	@staticmethod
-	def fetch_server_list(host, port, cell_id):
+	def fetch_server_list(host, port, cell_id, type='CS'):
 		url = "http://%s:%d/serverlist/%d/%d/" % (host, port, cell_id, 20)
 		
 		r = urllib2.urlopen(url).read()
@@ -104,6 +106,17 @@ class CDNClient(object):
 			if serverkv.get('deferred') == '1':
 				return None
 
-			return [x['host'].split(':') for id, x in serverkv['serverlist'].iteritems() if x.get('host') and x.get('type') == 'CS']
+			servers = []
+			for id, child in serverkv['serverlist'].iteritems():
+				if child.get('type') == type:
+					if child.get('vhost') and child.get('vhost') != child.get('host'):
+						(h, p) = child.get('vhost').split(':')
+						h = socket.gethostbyname(node_host.split(':')[0])
+					else:
+						(h, p) = child.get('host').split(':')
+					
+					load = child.get('weightedload')
+					servers.append((h, p, load))
+			return sorted(servers, key=itemgetter(2))
 		except:
 			return None
