@@ -14,11 +14,13 @@ class SteamClient():
 		self.listeners = []
 		self.message_constructors = dict()
 		self.message_events = dict()
+		self.message_job_events = dict()
 
 		self.username = None
 		self.jobid = 0
 		self.steam2_ticket = None
 		self.session_token = None
+		self.server_list = dict()
 	
 		self.connection = TCPConnection(self)
 		self.connection_event = Event()
@@ -30,8 +32,10 @@ class SteamClient():
 		self.register_message(EMsg.ClientSessionToken, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientSessionToken)
 
 	def connect(self, address):
-		self.connection.connect(address)
-		self.connection_event.wait()
+		if self.connection.connect(address):
+			self.connection_event.wait()
+			return True
+		return False
 	
 	def disconnect(self):
 		self.connection.disconnect()
@@ -48,6 +52,10 @@ class SteamClient():
 			if self.message_events[k]:
 				self.message_events[k].set_exception(reason)
 				self.message_events[k] = None
+		for k in self.message_job_events.keys():
+			if self.message_job_events[k]:
+				self.message_job_events[k].set_exception(reason)
+				self.message_job_events[k] = None
 		
 		self.username = None
 		self.jobid = 0
@@ -79,12 +87,9 @@ class SteamClient():
 
 		self.connection.send_message(message)
 		
-		jobid_parsed = -1
-		while jobid_parsed != jobid:
-			message = self.wait_for_message(emsg)
-			jobid_parsed = message.header.target_jobid
-			
-		return message
+		async_result = self.message_job_events[jobid] = AsyncResult()
+		
+		return async_result.get()
 
 	@property
 	def steamid(self):
@@ -101,11 +106,8 @@ class SteamClient():
 
 		self.connection.send_message(message)
 
-		if self.steamid:
-			return EResult.OK
-		else:
-			logonResponse = self.wait_for_message(EMsg.ClientLogOnResponse)
-			return logonResponse.body.eresult
+		logonResponse = self.wait_for_message(EMsg.ClientLogOnResponse)
+		return logonResponse.body
 
 	def login(self, username=None, password=None, login_key=None, auth_code=None):
 		self.username = username
@@ -139,11 +141,8 @@ class SteamClient():
 
 		self.connection.send_message(message)
 
-		if self.steamid:
-			return EResult.OK
-		else:
-			logonResponse = self.wait_for_message(EMsg.ClientLogOnResponse)
-			return logonResponse.body.eresult
+		logonResponse = self.wait_for_message(EMsg.ClientLogOnResponse)
+		return logonResponse.body
 		
 	def get_session_token(self):
 		if self.session_token:
@@ -166,11 +165,13 @@ class SteamClient():
 			self.handle_update_machine_auth(msg)
 		elif emsg == EMsg.ClientSessionToken:
 			self.handle_session_token(msg)
+		elif emsg == EMsg.ClientServerList:
+			self.handle_server_list(msg)
 			
 		for listener in self.listeners:
 			listener.handle_message(emsg_real, msg)
 			
-		if emsg in self.message_events and self.message_events[emsg]:
+		if emsg in self.message_constructors:
 			constructor = self.message_constructors[emsg]
 			if constructor[2]:
 				message = constructor[0](constructor[1], constructor[2])
@@ -178,8 +179,12 @@ class SteamClient():
 				message = constructor[0](constructor[1])
 			message.parse(msg)
 			
-			self.message_events[emsg].set(message)
-			self.message_events[emsg] = None
+			if self.message_events.get(emsg):
+				self.message_events[emsg].set(message)
+				self.message_events[emsg] = None
+			if self.message_job_events.get(message.header.target_jobid):
+				self.message_job_events[message.header.target_jobid].set(message)
+				self.message_job_events[message.header.target_jobid] = None
 		
 
 	def handle_client_logon(self, msg):
@@ -218,3 +223,13 @@ class SteamClient():
 		message.parse(msg)
 		
 		self.session_token = message.body.token
+		
+	def handle_server_list(self, msg):
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientServerList)
+		message.parse(msg)
+		
+		for server in message.body.servers:
+			if not server.server_type in self.server_list:
+				self.server_list[server.server_type] = []
+			
+			self.server_list[server.server_type].append((Util.long2ip(server.server_ip), server.server_port))

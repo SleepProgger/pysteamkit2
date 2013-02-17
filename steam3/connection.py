@@ -1,11 +1,13 @@
-from gevent import core
+from gevent import core, socket
+from gevent.hub import sleep
 from crypto import CryptoUtil
 from protobuf import steammessages_base_pb2, steammessages_clientserver_pb2
 from steamid import SteamID
 from steam_base import EMsg, EUniverse, EResult
 from util import Util
 import msg_base
-import struct, binascii, StringIO, zipfile, socket, gevent
+import struct, binascii, StringIO, zipfile, gevent
+import traceback
 
 class ProtocolError(Exception):
 	"""
@@ -41,7 +43,7 @@ class Connection(object):
 		
 	def cleanup(self):
 		if self.heartbeat:
-			self.heartbeat.cancel()
+			self.heartbeat.join()
 			
 		self.netfilter = None
 		self.session_id = None
@@ -71,10 +73,9 @@ class Connection(object):
 		self.write(msg)
 		
 	def dispatch_message(self, msg):
-		emsg_real, = struct.unpack_from('I', msg)
+		emsg_real, = struct.unpack_from('<I', msg)
 		emsg = Util.get_msg(emsg_real)
-		print("dispatch_message", emsg, len(msg))
-		
+
 		if emsg == EMsg.ChannelEncryptRequest:
 			gevent.spawn(self.channel_encrypt_request, msg)
 		elif emsg == EMsg.ClientLogOnResponse:
@@ -109,16 +110,18 @@ class Connection(object):
 		self.send_message(response)
 		
 		encrypt_result = self.client.wait_for_message(EMsg.ChannelEncryptResult)
-		
+
 		if encrypt_result.body.result != EResult.OK:
 			raise ProtocolError('Unable to negotiate channel encryption')
 		
 		self.netfilter = NetEncryption(session_key)
 		self.client.handle_connected()
 	
-	def heartbeat(self):
-		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientHeartBeat, EMsg.ClientHeartBeat)
-		self.send_message(message)
+	def _heartbeat(self, time):
+		while self.socket:
+			sleep(time)
+			message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientHeartBeat, EMsg.ClientHeartBeat)
+			self.send_message(message)
 		
 	def logon_response(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogonResponse)
@@ -129,7 +132,7 @@ class Connection(object):
 			self.steamid = SteamID(message.proto_header.steamid)
 		
 			delay = message.body.out_of_game_heartbeat_seconds
-			self.heartbeat = core.timer(delay, self.heartbeat)
+			self.heartbeat = gevent.spawn(self._heartbeat, delay)
 
 	def split_multi_message(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_base_pb2.CMsgMulti)
@@ -144,7 +147,7 @@ class Connection(object):
 		
 		i = 0
 		while i < len(payload):
-			sub_size, = struct.unpack_from('I', payload, i)
+			sub_size, = struct.unpack_from('<I', payload, i)
 			self.dispatch_message(payload[i+4:i+4+sub_size])
 			i += sub_size + 4
 		
@@ -154,15 +157,17 @@ class TCPConnection(Connection):
 		self.socket = None
 		self.write_buffer = []
 		self.read_buffer = ''
-		self.read_event = None
-		self.write_event = None
+		self.net_read = None
+		self.net_write = None
 		
 	def connect(self, address):
 		self.socket = socket.socket()
-		self.socket.connect(address)
-
-		self.read_event = core.read_event(self.socket.fileno(), self.__read_data, persist=True)
-		self.write_event = core.write_event(self.socket.fileno(), self.__write_data, persist=True)
+		
+		with gevent.Timeout(5, False) as timeout:
+			self.socket.connect(address)
+			self.net_read = gevent.spawn(self.__read_data)
+			return True
+		return False
 	
 	def disconnect(self):
 		self.cleanup()
@@ -171,6 +176,9 @@ class TCPConnection(Connection):
 		message = struct.pack('I4s', len(message), 'VT01') + message
 		self.write_buffer.append(message)
 		
+		if not self.net_write:
+			self.net_write = gevent.spawn(self.__write_data)
+		
 	def cleanup(self):
 		super(TCPConnection, self).cleanup()
 		self.write_buffer = []
@@ -178,52 +186,46 @@ class TCPConnection(Connection):
 		if self.socket:
 			self.socket.close()
 			self.socket = None
-		if self.read_event:
-			self.read_event.cancel()
-			self.read_event = None
-		if self.write_event:
-			self.write_event.cancel()
-			self.write_event = None
+		#if self.net_read:
+		#	self.net_read.join()
+		#if self.net_write:
+		#	self.net_write.join()
 			
 		self.client.handle_disconnected(SocketException())
 		
-	def __write_data(self, event, _evtype):
-		assert event is self.write_event
-		
-		if len(self.write_buffer) > 0:
+	def __write_data(self):
+		while len(self.write_buffer) > 0:
 			try:
 				buffer = self.write_buffer[0]
-				bytes_written = self.socket.send(buffer)
+				self.socket.sendall(buffer)
 			except:
 				self.cleanup()
 				return
 
-			if bytes_written < len(self.write_buffer[0]):
-				self.write_buffer[0] = buffer[bytes_written:]
-			else:
-				self.write_buffer.pop(0)
+			self.write_buffer.pop(0)
 
-	def __read_data(self, event, _evtype):
-		assert event is self.read_event
-		
-		try:
-			data = self.socket.recv(4096)
-		except:
-			self.cleanup()
-			return
-			
-		if len(data) == 0:
-			self.cleanup()
-			return
-			
-		self.data_received(data)
+		self.net_write = None
+
+	def __read_data(self):
+		while self.socket:
+			try:
+				data = self.socket.recv(4096)
+			except:
+				# duplication
+				self.cleanup()
+				return
+				
+			if len(data) == 0:
+				self.cleanup()
+				return
+				
+			self.data_received(data)
 	
 	def data_received(self, data):
 		self.read_buffer += data
-		print("Got data length: ", len(data), "Buffer is length: ", len(self.read_buffer))
-		
+
 		while len(self.read_buffer) >= 8:
-			length, magic = struct.unpack_from('I4s', self.read_buffer)
+			length, magic = struct.unpack_from('<I4s', self.read_buffer)
 			
 			if magic != 'VT01':
 				raise ProtocolError('Invalid packet magic')
@@ -237,7 +239,6 @@ class TCPConnection(Connection):
 			try:
 				self.dispatch_message(buffer)
 			except:
-				self.disconnect()
-				raise
+				print traceback.format_exc()
 
 			self.read_buffer = self.read_buffer[length+8:]

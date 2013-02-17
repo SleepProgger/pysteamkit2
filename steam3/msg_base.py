@@ -3,7 +3,7 @@ from protobuf import steammessages_base_pb2
 import struct
 
 class MsgHdr:
-	HeaderFmt = '=Iqq'
+	HeaderFmt = '<Iqq'
 	HeaderLength = struct.calcsize(HeaderFmt)
 	def __init__(self):
 		self.emsg = EMsg.Invalid
@@ -48,7 +48,7 @@ class ProtobufMsgHdr(object):
 		self.proto.jobid_target = value
 
 	def parse(self, buffer):
-		self.emsg, len = struct.unpack_from('II', buffer)
+		self.emsg, len = struct.unpack_from('<II', buffer)
 		self.proto.ParseFromString(buffer[ProtobufMsgHdr.HeaderLength:ProtobufMsgHdr.HeaderLength+len])
 		return ProtobufMsgHdr.HeaderLength + len
 	def serialize(self):
@@ -87,7 +87,7 @@ class ChannelEncryptRequest:
 		self.protocol_version = 1
 		self.universe = EUniverse.Invalid
 	def parse(self, buffer, pos=0):
-		self.protocol_version, self.universe = struct.unpack_from('II', buffer, pos)
+		self.protocol_version, self.universe = struct.unpack_from('<II', buffer, pos)
 	def serialize(self):
 		return struct.pack('II', self.protocol_version, self.universe)
 
@@ -96,7 +96,7 @@ class ChannelEncryptResponse:
 		self.protocol_version = 1
 		self.key_size = -1
 	def parse(self, buffer, pos=0):
-		self.protocol_version, self.key_size = struct.unpack_from('II', buffer, pos)
+		self.protocol_version, self.key_size = struct.unpack_from('<II', buffer, pos)
 	def serialize(self):
 		return struct.pack('II', self.protocol_version, self.key_size)
 
@@ -104,6 +104,6 @@ class ChannelEncryptResult:
 	def __init__(self):
 		self.result = EResult.Invalid
 	def parse(self, buffer, pos=0):
-		self.result, = struct.unpack_from('I', buffer, pos)
+		self.result, = struct.unpack_from('<I', buffer, pos)
 	def serialize(self):
 		return struct.pack('I', self.result)

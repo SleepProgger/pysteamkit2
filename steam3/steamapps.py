@@ -14,6 +14,7 @@ class SteamApps():
 		self.client.register_listener(self)
 		self.client.register_message(EMsg.ClientLicenseList, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLicenseList)
 		self.client.register_message(EMsg.PICSProductInfoResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSProductInfoResponse)
+		self.client.register_message(EMsg.ClientGetDepotDecryptionKeyResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetDepotDecryptionKeyResponse)
 		
 	def get_licenses(self):
 		if self.licenses:
@@ -54,11 +55,11 @@ class SteamApps():
 		response = self.client.wait_for_job(message, EMsg.PICSProductInfoResponse)
 
 		for app in response.body.apps:
-			self.app_cache[app.appid] = vdf.loads(app.buffer)
+			self.app_cache[app.appid] = vdf.loads(app.buffer)['appinfo']
 
 		for package in response.body.packages:
 			kv = vdf.loadbinary(package.buffer[4:])
-			self.package_cache[package.packageid] = kv[package.packageid][str(package.packageid)]
+			self.package_cache[package.packageid] = kv[0][str(package.packageid)]
 
 		return response.body
 
