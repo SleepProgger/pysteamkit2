@@ -24,6 +24,7 @@ args = parser.parse_args()
 client = None
 steamapps = None
 content_client_pool = None
+use_gevent_10 = hasattr(gevent, 'wait')
 
 class SteamClientHandler:
 	def get_sentry_file(self, username):
@@ -270,15 +271,12 @@ def main(args):
 		print('Nothing to download')
 		return
 		
-	download_start_time = time.clock()
-	
 	for (depotid, depot_files) in depot_download_list:
 		depot = get_depot(args.appid, depotid)
 		print("Downloading \"%s\"" % (depot['name'],))
 		
 		for (file, chunks) in depot_files:
-			est_speed = total_bytes_downloaded / (time.clock() - download_start_time)
-			print("[%s/%s @ %s/s] %s" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size), Util.sizeof_fmt(est_speed), file.filename))
+			print("[%s/%s] %s" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size), file.filename))
 
 			if not os.path.exists(path_prefix + file.filename):
 				with open(path_prefix + file.filename, 'wb') as f:
@@ -302,7 +300,11 @@ def main(args):
 							print("Unable to download any more chunks")
 							break
 					
-					gevent.wait(download_jobs, count=1)
+					if use_gevent_10:
+						gevent.wait(download_jobs, count=1)
+					else:
+						gevent.joinall(download_jobs)
+
 					completed_chunks = sorted([job.value for job in download_jobs if job.value], key=itemgetter(1))
 					download_jobs = [job for job in download_jobs if not job.value]
 					
