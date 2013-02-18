@@ -290,10 +290,10 @@ def main(args):
 				while len(chunks_completed) < len(chunks):
 					if len(download_jobs) < 4:
 						for chunk in chunks:
-							if chunk.sha in chunks_downloading:
+							if chunk.offset in chunks_downloading:
 								continue
 							download_jobs.append(gevent.spawn(get_depot_chunk, depotid, chunk))
-							chunks_downloading.append(chunk.sha)
+							chunks_downloading.append(chunk.offset)
 							if len(download_jobs) >= 4:
 								break
 						if len(download_jobs) == 0:
@@ -310,16 +310,15 @@ def main(args):
 					
 					for (chunk, offset, chunk_data, status) in completed_chunks:
 						if status != 200:
-							print("Chunk failed %s" % (chunk.sha.encode('hex')))
-							chunks_downloading.remove(chunk.sha)
+							print("Chunk failed %s" % (chunk.sha.encode('hex'),))
+							chunks_downloading.remove(offset)
 							continue
 							
 						chunk_data = CDNClient.process_chunk(chunk_data, depot_keys[depotid])
 						f.seek(offset)
 						f.write(chunk_data)
 						total_bytes_downloaded += len(chunk_data)
-						chunks_completed.append(chunks_completed)
-
+						chunks_completed.append(offset)
 		
 	print("[%s/%s] Completed" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size)))
 
