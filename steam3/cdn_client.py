@@ -4,7 +4,7 @@ from urllib import urlencode
 from gevent import socket
 from operator import itemgetter
 import vdf, struct, urllib2
-
+import zipfile, StringIO
 
 class CDNClient(object):
 	def __init__(self, host, port, app_ticket=None, steamid=None):
@@ -93,6 +93,26 @@ class CDNClient(object):
 			return (err.code, None)
 		except:
 			return (None, None)
+			
+	def download_depot_chunk(self, depotid, chunkid):
+		(url, headers) = self._make_request_url('depot', '%d/chunk/%s' % (int(depotid), chunkid))
+		
+		try:
+			r = urllib2.Request(url, headers=headers)
+			r = urllib2.urlopen(r).read()
+			return (200, r)
+		except urllib2.HTTPError as err:
+			return (err.code, None)
+		except:
+			return (None, None)
+		
+	@staticmethod
+	def process_chunk(chunk, depot_key):
+		decrypted_chunk = CryptoUtil.symmetric_decrypt(chunk, depot_key)
+		zip_buffer = StringIO.StringIO(decrypted_chunk)
+		with zipfile.ZipFile(zip_buffer, 'r') as zip:
+			return zip.read(zip.namelist()[0])
+		
 		
 	@staticmethod
 	def fetch_server_list(host, port, cell_id, type='CS'):

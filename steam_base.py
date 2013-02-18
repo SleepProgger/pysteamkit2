@@ -479,6 +479,16 @@ class EServerType:
 	CS = 36
 	GC = 37
 	
+class EDepotFileFlag:
+	UserConfig = 1
+	VersionedUserConfig = 2
+	Encrypted = 4
+	ReadOnly = 8
+	Hidden = 16
+	Executable = 32
+	Directory = 64
+	CustomExecutable = 128
+	
 class UniverseKeys:
 	Public = str(bytearray([
 				0x30, 0x81, 0x9D, 0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01,

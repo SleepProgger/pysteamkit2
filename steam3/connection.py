@@ -96,7 +96,7 @@ class Connection(object):
 		if message.body.universe != EUniverse.Public:
 			raise ProtocolError('Unexpected universe in encryption request')
 			
-		print("Channel encrypt request. Proto: ", message.body.protocol_version, "Universe: ", message.body.universe)
+		#print("Channel encrypt request. Proto: ", message.body.protocol_version, "Universe: ", message.body.universe)
 		
 		session_key = CryptoUtil.create_session_key()
 		crypted_key = CryptoUtil.rsa_encrypt(session_key)

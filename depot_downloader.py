@@ -1,12 +1,14 @@
 from gevent import monkey
 monkey.patch_all()
 
-import gevent, sys, argparse, os
+import gevent, sys, argparse, os, os.path, time
 from gevent.pool import Pool
 from steam3.client import SteamClient
 from steam3.cdn_client import CDNClient
-from steam_base import EResult, EMsg, EServerType
+from steam_base import EResult, EMsg, EServerType, EDepotFileFlag
 from depot_manifest import DepotManifest
+from cdn_client_pool import CDNClientPool
+from operator import attrgetter, itemgetter
 from util import Util
 
 parser = argparse.ArgumentParser(description='DepotDownloader downloads depots.')
@@ -40,31 +42,6 @@ class SteamClientHandler:
 	def handle_message(self, emsg, msg):
 		emsg = Util.get_msg(emsg)
 
-class CDNClientPool(object):
-	def __init__(self, servers, app_ticket, steamid):
-		self.clients = [CDNClient(ip, port, app_ticket, steamid) for (ip, port, load) in servers]
-		self.client_pool = []
-		
-	def get_client(self, depot):
-		while len(self.client_pool) > 0:
-			client = self.client_pool.pop(0)
-			
-			if client.app_ticket or client.depot == depot or client.auth_depotid(depot):
-				return client
-		
-		while len(self.clients) > 0:
-			client = self.clients.pop(0)
-			
-			if client.initialize():
-				if client.app_ticket:
-					client.auth_appticket()
-				if client.app_ticket or client.depot == depot or client.auth_depotid(depot):
-					return client
-				
-		raise Exception("Exhausted CDN client pool")
-		
-	def return_client(self, client):
-		self.client_pool.append(client)
 
 def get_depots_for_app(appid, filter):
 	return [int(key) for key,values in steamapps.app_cache[appid]['depots'].iteritems() if key.isdigit() and (not filter or int(key) in filter)]
@@ -87,6 +64,14 @@ def get_depot_manifest(depotid, manifestid):
 		return (depotid, manifest, status)
 	return (depotid, None, status)
 		
+def get_depot_chunk(depotid, chunk):
+	client = content_client_pool.get_client(depotid)
+	(status, chunk_data) = client.download_depot_chunk(depotid, chunk.sha.encode('hex'))
+	if chunk_data:
+		content_client_pool.return_client(client)
+		return (chunk, chunk.offset, chunk_data, status)
+	return (chunk, None, None, status)
+	
 def main(args):
 	global client, steamapps, content_client_pool
 	
@@ -116,20 +101,19 @@ def main(args):
 		print("logon failed", logon_result.eresult)
 		return
 
-	print("logon", str(client.steamid))
+	print("Signed into Steam3 as %s" % (str(client.steamid),))
 	
 	if args.cellid == None:
 		print("No cell id specified, using Steam3 specified: %d" % (logon_result.cell_id,))
 		args.cellid = logon_result.cell_id
 		
 	sessiontoken = client.get_session_token()
-	print("session token: ", sessiontoken)
 	
 	steamapps = client.steamapps
 	
 	licenses = steamapps.get_licenses()
 	licenses = [x.package_id for x in licenses] if licenses else [0]
-	print("Licenses: ", licenses)
+	print("Licenses: %s" % (licenses,))
 	
 	product_info = steamapps.get_product_info(app_ids = [args.appid], package_ids = licenses)
 	valid_apps = [x.appid for x in product_info.apps]
@@ -145,7 +129,7 @@ def main(args):
 
 	#TODO
 	app_ticket = None
-	
+
 	depots = get_depots_for_app(args.appid, args.depots)
 	
 	if len(depots) == 0:
@@ -227,19 +211,114 @@ def main(args):
 				
 				if not depot_manifest.decrypt_filenames(depot_keys[depotid]):
 					print("Could not decrypt depot manifest for %d" % (depotid,))
-					raise Exception("Unable to decrypt")
+					return
 					
 				depot_manifests.append((depotid, depot_manifest))
 			elif status == 401:
 				print("Did not have sufficient access to download manifest for %d" % (depotid,))
-				raise Exception("Insufficent privileges")
+				return
 			else:
 				print("Missed %d" % (depotid,))
 			
+	print("Verifying existing files")
+	
+	total_download_size = 0
+	total_bytes_downloaded = 0
+	depot_download_list = []
+	path_prefix = 'download/'
+	Util.makedir(path_prefix)
 	
 	for (depotid, manifest) in depot_manifests:
 		depot = get_depot(args.appid, depotid)
+		depot_files = []
+
+		for file in manifest.files:
+			sorted_file_chunks = sorted(file.chunks, key=attrgetter('offset'))
+			chunks = []
+				
+			if file.flags & EDepotFileFlag.Directory:
+				Util.makedir(path_prefix + file.filename)
+				continue
+				
+			Util.makedir(os.path.dirname(path_prefix + file.filename))
+			
+			if os.path.exists(path_prefix + file.filename):
+				with open(path_prefix + file.filename, 'r+b') as f:
+					f.truncate(file.size)
+					for chunk in sorted_file_chunks:
+						f.seek(chunk.offset)
+						bytes = f.read(chunk.cb_original)
+						
+						if Util.adler_hash(bytes) == chunk.crc:
+							continue
+
+						total_download_size += chunk.cb_original
+						chunks.append(chunk)
+			else:
+				total_download_size += file.size
+				chunks = sorted_file_chunks
+				
+			if len(chunks) > 0:
+				depot_files.append((file, chunks)) 
+				
+		if len(depot_files) > 0:
+			depot_download_list.append((depotid, depot_files))
+	
+	if total_download_size > 0:
+		print('%s to download' % (Util.sizeof_fmt(total_download_size),))
+	else:
+		print('Nothing to download')
+		return
+		
+	download_start_time = time.clock()
+	
+	for (depotid, depot_files) in depot_download_list:
+		depot = get_depot(args.appid, depotid)
 		print("Downloading \"%s\"" % (depot['name'],))
-		print("Processing %d %s" % (depotid, manifest))
+		
+		for (file, chunks) in depot_files:
+			est_speed = total_bytes_downloaded / (time.clock() - download_start_time)
+			print("[%s/%s @ %s/s] %s" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size), Util.sizeof_fmt(est_speed), file.filename))
+
+			if not os.path.exists(path_prefix + file.filename):
+				with open(path_prefix + file.filename, 'wb') as f:
+					f.truncate(file.size)
+
+			with open(path_prefix + file.filename, 'r+b') as f:
+				chunks_downloading = []
+				chunks_completed = []
+				download_jobs = []
+				
+				while len(chunks_completed) < len(chunks):
+					if len(download_jobs) < 4:
+						for chunk in chunks:
+							if chunk.sha in chunks_downloading:
+								continue
+							download_jobs.append(gevent.spawn(get_depot_chunk, depotid, chunk))
+							chunks_downloading.append(chunk.sha)
+							if len(download_jobs) >= 4:
+								break
+						if len(download_jobs) == 0:
+							print("Unable to download any more chunks")
+							break
+					
+					gevent.wait(download_jobs, count=1)
+					completed_chunks = sorted([job.value for job in download_jobs if job.value], key=itemgetter(1))
+					download_jobs = [job for job in download_jobs if not job.value]
+					
+					for (chunk, offset, chunk_data, status) in completed_chunks:
+						if status != 200:
+							print("Chunk failed %s" % (chunk.sha.encode('hex')))
+							chunks_downloading.remove(chunk.sha)
+							continue
+							
+						chunk_data = CDNClient.process_chunk(chunk_data, depot_keys[depotid])
+						f.seek(offset)
+						f.write(chunk_data)
+						total_bytes_downloaded += len(chunk_data)
+						chunks_completed.append(chunks_completed)
+
+		
+	print("[%s/%s] Completed" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size)))
 
 main(args)

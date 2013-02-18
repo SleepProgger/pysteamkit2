@@ -5,3 +5,4 @@ syntax: glob
 *.bin
 *.exe
 *.orig
+download

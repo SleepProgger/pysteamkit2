@@ -1,4 +1,5 @@
 from crypto import CryptoUtil
+from operator import attrgetter
 from protobuf import content_manifest_pb2
 import struct, base64
 import zipfile, StringIO
@@ -12,6 +13,10 @@ class DepotManifest(object):
 		self.metadata = None
 		self.payload = None
 		self.signature = None
+		
+	@property
+	def files(self):
+		return sorted(self.payload.mappings, key=attrgetter('filename'))
 		
 	def decrypt_filenames(self, depot_key):
 		if not self.metadata.filenames_encrypted:
@@ -30,7 +35,7 @@ class DepotManifest(object):
 
 		self.metadata.filenames_encrypted = False
 		return True
-		
+			
 	def parse(self, input):
 		zip_buffer = StringIO.StringIO(input)
 		with zipfile.ZipFile(zip_buffer, 'r') as zip:

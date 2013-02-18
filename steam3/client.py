@@ -157,7 +157,7 @@ class SteamClient():
 
 	def handle_message(self, emsg_real, msg):
 		emsg = Util.get_msg(emsg_real)
-		print("EMsg is ", Util.lookup_enum(EMsg, emsg))
+		#print("EMsg is ", Util.lookup_enum(EMsg, emsg))
 		
 		if emsg == EMsg.ClientLogOnResponse:
 			self.handle_client_logon(msg)
