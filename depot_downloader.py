@@ -118,7 +118,7 @@ def main(args):
 	licenses = [x.package_id for x in licenses] if licenses else [0]
 	print("Licenses: %s" % (licenses,))
 	
-	product_info = steamapps.get_product_info(app_ids = [args.appid], package_ids = licenses)
+	product_info = steamapps.get_product_info(apps = [args.appid], packages = licenses)
 	valid_apps = [x.appid for x in product_info.apps]
 	valid_packages = [x.packageid for x in product_info.packages]
 	
@@ -273,6 +273,7 @@ def main(args):
 		print('Nothing to download')
 		return
 		
+	pool = Pool(4)
 	for (depotid, depot_files) in depot_download_list:
 		depot = get_depot(args.appid, depotid)
 		print("Downloading \"%s\"" % (depot['name'],))
@@ -290,7 +291,6 @@ def main(args):
 				while len(chunks_completed) < len(chunks):
 					downloads = [(depotid, chunk) for chunk in chunks if not chunk.offset in chunks_completed]
 					
-					pool = Pool(4)
 					for (chunk, offset, chunk_data, status) in pool.imap(get_depot_chunkstar, downloads):
 						if status != 200:
 							print("Chunk failed %s" % (chunk.sha.encode('hex'),))

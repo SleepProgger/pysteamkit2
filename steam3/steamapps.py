@@ -36,19 +36,25 @@ class SteamApps():
 		return response.body
 		
 		
-	def get_product_info(self, app_ids=None, package_ids=None):
+	def get_product_info(self, apps=None, packages=None):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgPICSProductInfoRequest, EMsg.PICSProductInfoRequest)
 
-		if app_ids:
-			for app_id in app_ids:
+		if apps:
+			for app in apps:
 				app_info = message.body.apps.add()
-				app_info.appid = app_id
 				app_info.only_public = False
+				if isinstance(app, tuple):
+					app_info.appid, app_info.access_token = app
+				else:
+					app_info.appid = app
 	
-		if package_ids:
-			for package_id in package_ids:
+		if packages:
+			for package in packages:
 				package_info = message.body.packages.add()
-				package_info.packageid = package_id
+				if isinstance(package, tuple):
+					package_info.appid, package_info.access_token = package
+				else:
+					package_info.packageid = package
 		
 		message.body.meta_data_only = False
 		
