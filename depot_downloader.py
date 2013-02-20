@@ -14,7 +14,7 @@ from util import Util
 parser = argparse.ArgumentParser(description='DepotDownloader downloads depots.')
 parser.add_argument('appid', type=int, help='AppID to download')
 parser.add_argument('--branch', type=str, default='public', help='Application branch to download')
-parser.add_argument('--dir', type=str, help='Directory to operate within')
+parser.add_argument('--dir', type=str, default='downloads/', help='Directory to operate within')
 parser.add_argument('--depots', type=int, nargs='*', help='Specific depots to download')
 parser.add_argument('--username', type=str, help='Username to sign in with')
 parser.add_argument('--password', type=str, help='Account password')
@@ -24,7 +24,6 @@ args = parser.parse_args()
 client = None
 steamapps = None
 content_client_pool = None
-use_gevent_10 = hasattr(gevent, 'wait')
 
 class SteamClientHandler:
 	def get_sentry_file(self, username):
@@ -64,7 +63,10 @@ def get_depot_manifest(depotid, manifestid):
 		content_client_pool.return_client(client)
 		return (depotid, manifest, status)
 	return (depotid, None, status)
-		
+	
+def get_depot_chunkstar(args):
+	return get_depot_chunk(*args)
+	
 def get_depot_chunk(depotid, chunk):
 	client = content_client_pool.get_client(depotid)
 	(status, chunk_data) = client.download_depot_chunk(depotid, chunk.sha.encode('hex'))
@@ -226,7 +228,7 @@ def main(args):
 	total_download_size = 0
 	total_bytes_downloaded = 0
 	depot_download_list = []
-	path_prefix = 'download/'
+	path_prefix = args.dir
 	Util.makedir(path_prefix)
 	
 	for (depotid, manifest) in depot_manifests:
@@ -283,35 +285,15 @@ def main(args):
 					f.truncate(file.size)
 
 			with open(path_prefix + file.filename, 'r+b') as f:
-				chunks_downloading = []
 				chunks_completed = []
-				download_jobs = []
 				
 				while len(chunks_completed) < len(chunks):
-					if len(download_jobs) < 4:
-						for chunk in chunks:
-							if chunk.offset in chunks_downloading:
-								continue
-							download_jobs.append(gevent.spawn(get_depot_chunk, depotid, chunk))
-							chunks_downloading.append(chunk.offset)
-							if len(download_jobs) >= 4:
-								break
-						if len(download_jobs) == 0:
-							print("Unable to download any more chunks")
-							break
+					downloads = [(depotid, chunk) for chunk in chunks if not chunk.offset in chunks_completed]
 					
-					if use_gevent_10:
-						gevent.wait(download_jobs, count=1)
-					else:
-						gevent.joinall(download_jobs)
-
-					completed_chunks = sorted([job.value for job in download_jobs if job.value], key=itemgetter(1))
-					download_jobs = [job for job in download_jobs if not job.value]
-					
-					for (chunk, offset, chunk_data, status) in completed_chunks:
+					pool = Pool(4)
+					for (chunk, offset, chunk_data, status) in pool.imap(get_depot_chunkstar, downloads):
 						if status != 200:
 							print("Chunk failed %s" % (chunk.sha.encode('hex'),))
-							chunks_downloading.remove(offset)
 							continue
 							
 						chunk_data = CDNClient.process_chunk(chunk_data, depot_keys[depotid])

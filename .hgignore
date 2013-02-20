@@ -6,3 +6,4 @@ syntax: glob
 *.exe
 *.orig
 download
+downloads
