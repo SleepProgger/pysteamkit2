@@ -44,6 +44,8 @@ class SteamClientHandler:
 
 
 def get_depots_for_app(appid, filter):
+	if not 'depots' in steamapps.app_cache[appid]:
+		return []
 	return [int(key) for key,values in steamapps.app_cache[appid]['depots'].iteritems() if key.isdigit() and (not filter or int(key) in filter)]
 	
 def get_depot(appid, depotid):
@@ -52,7 +54,7 @@ def get_depot(appid, depotid):
 def get_depot_key(appid, depotid):
 	depot_key_result = steamapps.get_depot_key(depotid, args.appid)
 	if depot_key_result.eresult != EResult.OK:
-		return False
+		return (depotid, None)
 
 	return (depotid, depot_key_result.depot_encryption_key)
 	
@@ -115,7 +117,7 @@ def main(args):
 	steamapps = client.steamapps
 	
 	licenses = steamapps.get_licenses()
-	licenses = [x.package_id for x in licenses] if licenses else [0]
+	licenses = [x.package_id for x in licenses] if licenses else [17906]
 	print("Licenses: %s" % (licenses,))
 	
 	product_info = steamapps.get_product_info(apps = [args.appid], packages = licenses)
@@ -170,6 +172,9 @@ def main(args):
 	
 	for job in key_fetch:
 		(depotid, depot_key) = job.value
+		if depot_key == None:
+			print("Could not get depot key for %d" % (depotid,))
+			return
 		depot_keys[depotid] = depot_key
 		
 	print("Building CDN server list")
