@@ -10,6 +10,7 @@ from depot_manifest import DepotManifest
 from cdn_client_pool import CDNClientPool
 from operator import attrgetter, itemgetter
 from util import Util
+from getpass import getpass
 
 parser = argparse.ArgumentParser(description='DepotDownloader downloads depots.')
 parser.add_argument('appid', type=int, help='AppID to download')
@@ -81,7 +82,7 @@ def main(args):
 	global client, steamapps, content_client_pool
 	
 	while args.username and not args.password:
-		args.password = raw_input('Please enter the password for "' + args.username + '": ')
+		args.password = getpass('Please enter the password for "' + args.username + '": ')
 	
 	client = SteamClient(SteamClientHandler())
 	if not client.connect(('cm0.steampowered.com', 27017)):
