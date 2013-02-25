@@ -20,11 +20,13 @@ parser.add_argument('--depots', type=int, nargs='*', help='Specific depots to do
 parser.add_argument('--username', type=str, help='Username to sign in with')
 parser.add_argument('--password', type=str, help='Account password')
 parser.add_argument('--cellid', type=int, help='Cell ID to use for downloads')
+parser.add_argument('--verify-all', action='store_true', default=False, help='Specify to verify all files')
 
 args = parser.parse_args()
 client = None
 steamapps = None
 content_client_pool = None
+install_manifest = None
 
 class SteamClientHandler:
 	def get_sentry_file(self, username):
@@ -81,6 +83,14 @@ def get_depot_chunk(depotid, chunk):
 def main(args):
 	global client, steamapps, content_client_pool
 	
+	install_manifest = DepotManifest()
+	if os.path.exists('install.manifest'):
+		try:
+			with open('install.manifest', 'rb') as f:
+				install_manifest.parse(f.read())
+		except:
+			os.remove('install.manifest')
+
 	while args.username and not args.password:
 		args.password = getpass('Please enter the password for "' + args.username + '": ')
 	
@@ -214,7 +224,7 @@ def main(args):
 			if manifest:
 				print("Got manifest for %d" % (depotid,))
 				depot_manifests_retrieved.append(depotid)
-				
+									
 				depot_manifest = DepotManifest()
 				depot_manifest.parse(manifest)
 				
@@ -241,6 +251,8 @@ def main(args):
 		depot = get_depot(args.appid, depotid)
 		depot_files = []
 
+		files_changed = install_manifest.get_files_changed(manifest)
+		
 		for file in manifest.files:
 			sorted_file_chunks = sorted(file.chunks, key=attrgetter('offset'))
 			chunks = []
@@ -252,6 +264,9 @@ def main(args):
 			Util.makedir(os.path.dirname(path_prefix + file.filename))
 			
 			if os.path.exists(path_prefix + file.filename):
+				if not args.verify_all and file.filename not in files_changed:
+					continue
+					
 				with open(path_prefix + file.filename, 'r+b') as f:
 					f.truncate(file.size)
 					for chunk in sorted_file_chunks:
@@ -268,7 +283,7 @@ def main(args):
 				chunks = sorted_file_chunks
 				
 			if len(chunks) > 0:
-				depot_files.append((file, chunks)) 
+				depot_files.append((file, chunks))
 				
 		if len(depot_files) > 0:
 			depot_download_list.append((depotid, depot_files))
@@ -307,6 +322,16 @@ def main(args):
 						f.write(chunk_data)
 						total_bytes_downloaded += len(chunk_data)
 						chunks_completed.append(offset)
+						
+				#TODO: optimize me
+				if len(chunks_completed) == len(chunks):
+					mapping_file = install_manifest.payload.mappings.add()
+					mapping_file.filename = file.filename
+					mapping_file.sha_content = file.sha_content
+					
+					with open('install.manifest', 'wb') as f:
+						f.write(install_manifest.serialize())
+	
 		
 	print("[%s/%s] Completed" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size)))
 
