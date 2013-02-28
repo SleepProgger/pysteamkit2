@@ -132,9 +132,20 @@ def main(args):
 	print("Licenses: %s" % (licenses,))
 	
 	product_info = steamapps.get_product_info(apps = [args.appid], packages = licenses)
+	needs_token = [x.appid for x in product_info.apps if x.missing_token]
+	
+	if len(needs_token) > 0:
+		tokens = steamapps.get_access_tokens(needs_token)
+		if len(tokens.app_access_tokens) == 0:
+			print("Unable to get an access token for app %d" % (args.appid,))
+			return
+			
+		access_token = tokens.app_access_tokens[0].access_token
+		product_info = steamapps.get_product_info(apps = [(args.appid,access_token)], packages = licenses)
+	
 	valid_apps = [x.appid for x in product_info.apps]
 	valid_packages = [x.packageid for x in product_info.packages]
-	
+
 	if not args.appid in valid_apps:
 		print("Could not find an app for id %d" % (args.appid,))
 		return
@@ -314,7 +325,7 @@ def main(args):
 					
 					for (chunk, offset, chunk_data, status) in pool.imap(get_depot_chunkstar, downloads):
 						if status != 200:
-							print("Chunk failed %s" % (chunk.sha.encode('hex'),))
+							print("Chunk failed %s %d" % (chunk.sha.encode('hex'),status))
 							continue
 							
 						chunk_data = CDNClient.process_chunk(chunk_data, depot_keys[depotid])

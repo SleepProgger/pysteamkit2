@@ -14,6 +14,7 @@ class SteamApps():
 		self.client.register_listener(self)
 		self.client.register_message(EMsg.ClientLicenseList, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLicenseList)
 		self.client.register_message(EMsg.PICSProductInfoResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSProductInfoResponse)
+		self.client.register_message(EMsg.PICSAccessTokenResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSAccessTokenResponse)
 		self.client.register_message(EMsg.ClientGetDepotDecryptionKeyResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetDepotDecryptionKeyResponse)
 		
 	def get_licenses(self):
@@ -69,6 +70,19 @@ class SteamApps():
 
 		return response.body
 
+	def get_access_tokens(self, apps=None, packages=None):
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgPICSAccessTokenRequest, EMsg.PICSAccessTokenRequest)
+		
+		if apps:
+			message.body.appids.extend(apps)
+
+		if packages:
+			message.body.packageids.extend(packages)
+			
+		response = self.client.wait_for_job(message, EMsg.PICSAccessTokenResponse)
+		
+		return response.body
+	
 	def has_license_for_app(self, appid):
 		for (packageid, package) in self.package_cache.items():
 			if appid in package['appids'].values():
