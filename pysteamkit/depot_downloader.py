@@ -3,6 +3,7 @@ monkey.patch_all()
 
 import argparse
 import os
+import time
 from getpass import getpass
 from gevent.pool import Pool
 from operator import attrgetter
@@ -265,7 +266,7 @@ def main(args):
 		depot_files = []
 
 		files_changed = install_manifest.get_files_changed(manifest)
-		
+		last_write = 0
 		for file in manifest.files:
 			real_path = os.path.join(path_prefix,
 					file.filename.replace('\\', os.path.sep))
@@ -297,8 +298,16 @@ def main(args):
 				total_download_size += file.size
 				chunks = sorted_file_chunks
 				
-			if len(chunks) > 0:
+			if chunks:
 				depot_files.append((file, chunks))
+			else:
+				mapping_file = install_manifest.payload.mappings.add()
+				mapping_file.filename = file.filename
+				mapping_file.sha_content = file.sha_content
+				if time.time() - last_write > 1:
+					with open('install.manifest', 'wb') as f:
+						f.write(install_manifest.serialize())
+					last_write = time.time()
 				
 		if len(depot_files) > 0:
 			depot_download_list.append((depotid, depot_files))
@@ -313,7 +322,8 @@ def main(args):
 	for (depotid, depot_files) in depot_download_list:
 		depot = get_depot(args.appid, depotid)
 		print("Downloading \"%s\"" % (depot['name'],))
-		
+
+		last_write = 0
 		for (file, chunks) in depot_files:
 			translated = file.filename.replace('\\', os.path.sep)
 			real_path = os.path.join(path_prefix, translated)
@@ -346,9 +356,11 @@ def main(args):
 					mapping_file = install_manifest.payload.mappings.add()
 					mapping_file.filename = file.filename
 					mapping_file.sha_content = file.sha_content
-					
-					with open('install.manifest', 'wb') as f:
-						f.write(install_manifest.serialize())
+
+					if time.time() - last_write > 1:
+						with open('install.manifest', 'wb') as f:
+							f.write(install_manifest.serialize())
+						last_write = time.time()
 	
 		
 	print("[%s/%s] Completed" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size)))
