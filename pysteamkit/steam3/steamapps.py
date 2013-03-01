@@ -1,7 +1,8 @@
-from steam_base import EMsg, EResult, EUniverse, EAccountType
-from protobuf import steammessages_clientserver_pb2
-from util import Util
-import msg_base, vdf
+from pysteamkit.steam_base import EMsg, EResult, EUniverse, EAccountType
+from pysteamkit.protobuf import steammessages_clientserver_pb2
+from pysteamkit.util import Util
+from pysteamkit.steam3 import msg_base
+from pysteamkit import vdf
 
 class SteamApps():
 	def __init__(self, client):

@@ -1,9 +1,10 @@
-from crypto import CryptoUtil
-from util import Util
+from pysteamkit.crypto import CryptoUtil
+from pysteamkit.util import Util
 from urllib import urlencode
 from gevent import socket
 from operator import itemgetter
-import vdf, struct, urllib2
+from pysteamkit import vdf
+import struct, urllib2
 import zipfile, StringIO
 
 class CDNClient(object):

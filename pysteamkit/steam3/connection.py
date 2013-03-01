@@ -1,11 +1,11 @@
 from gevent import core, socket
 from gevent.hub import sleep
-from crypto import CryptoUtil
-from protobuf import steammessages_base_pb2, steammessages_clientserver_pb2
-from steamid import SteamID
-from steam_base import EMsg, EUniverse, EResult
-from util import Util
-import msg_base
+from pysteamkit.crypto import CryptoUtil
+from pysteamkit.protobuf import steammessages_base_pb2, steammessages_clientserver_pb2
+from pysteamkit.steamid import SteamID
+from pysteamkit.steam_base import EMsg, EUniverse, EResult
+from pysteamkit.util import Util
+from pysteamkit.steam3 import msg_base
 import struct, binascii, StringIO, zipfile, gevent
 import traceback
 

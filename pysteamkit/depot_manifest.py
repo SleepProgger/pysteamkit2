@@ -1,6 +1,6 @@
-from crypto import CryptoUtil
+from pysteamkit.crypto import CryptoUtil
 from operator import attrgetter
-from protobuf import content_manifest_pb2
+from pysteamkit.protobuf import content_manifest_pb2
 import struct, base64
 import zipfile, StringIO
 

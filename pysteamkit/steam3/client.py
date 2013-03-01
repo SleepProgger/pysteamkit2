@@ -1,11 +1,11 @@
 from gevent.event import AsyncResult, Event
-from steam_base import EMsg, EResult, EUniverse, EAccountType
-from protobuf import steammessages_clientserver_pb2
-from connection import TCPConnection
-from steamid import SteamID
-from util import Util
-from steamapps import SteamApps
-import msg_base
+from pysteamkit.steam_base import EMsg, EResult, EUniverse, EAccountType
+from pysteamkit.protobuf import steammessages_clientserver_pb2
+from pysteamkit.steam3.connection import TCPConnection
+from pysteamkit.steamid import SteamID
+from pysteamkit.util import Util
+from pysteamkit.steam3.steamapps import SteamApps
+from pysteamkit.steam3 import msg_base
 import struct
 
 class SteamClient():

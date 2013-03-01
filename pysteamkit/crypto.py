@@ -1,4 +1,4 @@
-from steam_base import UniverseKeys
+from pysteamkit.steam_base import UniverseKeys
 from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA
 from Crypto.Cipher import PKCS1_OAEP, AES

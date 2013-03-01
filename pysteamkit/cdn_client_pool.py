@@ -1,4 +1,4 @@
-from steam3.cdn_client import CDNClient
+from pysteamkit.steam3.cdn_client import CDNClient
 
 class CDNClientPool(object):
 	def __init__(self, servers, app_ticket, steamid):
