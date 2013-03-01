@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-import time
 from getpass import getpass
 from gevent.pool import Pool
 from operator import attrgetter
@@ -193,18 +192,14 @@ def main():
 	parser.add_argument('--password', type=str, help='Account password')
 	parser.add_argument('--cellid', type=int, help='Cell ID to use for downloads')
 	parser.add_argument('--verify-all', action='store_true', default=False, help='Specify to verify all files')
+	parser.add_argument('--manifest', default='install.manifest',
+		help="Path where local install manifest will be written")
 	args = parser.parse_args()
 
 	logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
 			datefmt='%T')
 
-	install_manifest = DepotManifest()
-	if os.path.exists('install.manifest'):
-		try:
-			with open('install.manifest', 'rb') as f:
-				install_manifest.parse(f.read())
-		except:
-			os.remove('install.manifest')
+	install_manifest = DepotManifest.from_file(args.manifest)
 
 	client = signin(args)
 	dl = DepotDownloader(client)
@@ -279,7 +274,6 @@ def main():
 		depot_files = []
 
 		files_changed = install_manifest.get_files_changed(manifest)
-		last_write = 0
 		for file in manifest.files:
 			real_path = os.path.join(path_prefix,
 					file.filename.replace('\\', os.path.sep))
@@ -320,10 +314,7 @@ def main():
 				mapping_file = install_manifest.payload.mappings.add()
 				mapping_file.filename = file.filename
 				mapping_file.sha_content = file.sha_content
-				if time.time() - last_write > 1:
-					with open('install.manifest', 'wb') as f:
-						f.write(install_manifest.serialize())
-					last_write = time.time()
+				install_manifest.to_file(args.manifest, lazy=True)
 				
 		if len(depot_files) > 0:
 			depot_download_list.append((depotid, depot_files))
@@ -332,6 +323,7 @@ def main():
 		print('%s to download' % (Util.sizeof_fmt(total_download_size),))
 	else:
 		print('Nothing to download')
+		install_manifest.to_file(args.manifest)
 		return
 		
 	pool = Pool(4)
@@ -339,7 +331,6 @@ def main():
 		depot = dl.get_depot(args.appid, depotid)
 		print("Downloading \"%s\"" % (depot['name'],))
 
-		last_write = 0
 		for (file, chunks) in depot_files:
 			translated = file.filename.replace('\\', os.path.sep)
 			real_path = os.path.join(path_prefix, translated)
@@ -372,13 +363,10 @@ def main():
 					mapping_file = install_manifest.payload.mappings.add()
 					mapping_file.filename = file.filename
 					mapping_file.sha_content = file.sha_content
+					install_manifest.to_file(args.manifest, lazy=True)
 
-					if time.time() - last_write > 1:
-						with open('install.manifest', 'wb') as f:
-							f.write(install_manifest.serialize())
-						last_write = time.time()
-	
-		
+	install_manifest.to_file(args.manifest)
 	print("[%s/%s] Completed" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size)))
+
 
 main()

@@ -1,6 +1,8 @@
 import struct
 import base64
+import os
 import StringIO
+import time
 import zipfile
 from operator import attrgetter
 
@@ -17,6 +19,7 @@ class DepotManifest(object):
 		self.metadata = content_manifest_pb2.ContentManifestMetadata()
 		self.payload = content_manifest_pb2.ContentManifestPayload()
 		self.signature = content_manifest_pb2.ContentManifestSignature()
+		self.last_written = 0
 		
 	@property
 	def files(self):
@@ -107,3 +110,22 @@ class DepotManifest(object):
 			zip.writestr('z', payload)
 			
 		return zip_buffer.getvalue()
+
+	@classmethod
+	def from_file(cls, path):
+		manifest = cls()
+		if not os.path.exists(path):
+			return manifest
+		try:
+			with open(path, 'rb') as fobj:
+				manifest.parse(fobj.read())
+		except:
+			os.remove(path)
+		return manifest
+
+	def to_file(self, path, lazy=False):
+		if lazy and time.time() - self.last_written < 5:
+			return
+		with open(path, 'wb') as fobj:
+			fobj.write(self.serialize())
+		self.last_written = time.time()
