@@ -124,24 +124,24 @@ class CDNClient(object):
 		url = "http://%s:%d/serverlist/%d/%d/" % (host, port, cell_id, 20)
 		
 		r = urllib2.urlopen(url).read()
-		
-		try:
-			serverkv = vdf.loads(r)
+		serverkv = vdf.loads(r)
 			
-			if serverkv.get('deferred') == '1':
-				return None
-
-			servers = []
-			for id, child in serverkv['serverlist'].iteritems():
-				if child.get('type') == type:
-					if child.get('vhost') and child.get('vhost') != child.get('host'):
-						(h, p) = child.get('vhost').split(':')
-						h = socket.gethostbyname(node_host.split(':')[0])
-					else:
-						(h, p) = child.get('host').split(':')
-					
-					load = child.get('weightedload')
-					servers.append((h, p, load))
-			return sorted(servers, key=itemgetter(2))
-		except:
+		if serverkv.get('deferred') == '1':
 			return None
+
+		servers = []
+		for id, child in serverkv['serverlist'].iteritems():
+			if child.get('type') == type:
+				if child.get('host').find(';')> 0:
+					(h, p) = child.get('host').split(':')
+				else:
+					(h, p) = child.get('host'), 80
+
+				#TODO: fixme
+				if h.endswith('.com'):
+					h = socket.gethostbyname(h)
+				
+				load = child.get('weightedload')
+				servers.append((h, p, load))
+
+		return sorted(servers, key=itemgetter(2))
