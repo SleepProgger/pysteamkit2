@@ -84,7 +84,7 @@ class DepotDownloader(object):
 	def set_appid(self, appid):
 		licenses = self.steamapps.get_licenses()
 		licenses = [x.package_id for x in licenses] if licenses else [17906]
-		print("Licenses: %s" % (licenses,))
+		log.info("Licenses: %s", ', '.join(str(x) for x in licenses))
 		
 		product_info = self.steamapps.get_product_info(apps=[appid],
 				packages=licenses)
@@ -197,7 +197,7 @@ def main():
 	args = parser.parse_args()
 
 	logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
-			datefmt='%T')
+			datefmt='%T', level=logging.INFO)
 
 	install_manifest = DepotManifest.from_file(args.manifest)
 
@@ -269,14 +269,19 @@ def main():
 	path_prefix = args.dir
 	Util.makedir(path_prefix)
 
+	# Get process umask, for chmod'ing files later on.
+	if os.name == 'posix':
+		umask = os.umask(0)
+		os.umask(umask)
+
 	for (depotid, manifest) in depot_manifests:
 		depot = dl.get_depot(args.appid, depotid)
 		depot_files = []
 
 		files_changed = install_manifest.get_files_changed(manifest)
 		for file in manifest.files:
-			real_path = os.path.join(path_prefix,
-					file.filename.replace('\\', os.path.sep))
+			translated = file.filename.replace('\\', os.path.sep)
+			real_path = os.path.join(path_prefix, translated)
 			sorted_file_chunks = sorted(file.chunks, key=attrgetter('offset'))
 			chunks = []
 				
@@ -287,6 +292,10 @@ def main():
 			Util.makedir(os.path.dirname(real_path))
 			
 			if os.path.exists(real_path):
+				log.debug("Verifying %s", translated)
+				if os.name == 'posix' and file.flags & EDepotFileFlag.Executable:
+					# Make it executable while honoring the local umask
+					os.chmod(real_path, 0775 & ~umask)
 				st = os.lstat(real_path)
 				if (not args.verify_all
 						and file.filename not in files_changed
@@ -340,6 +349,9 @@ def main():
 			if not os.path.exists(real_path):
 				with open(real_path, 'wb') as f:
 					f.truncate(file.size)
+			if os.name == 'posix' and file.flags & EDepotFileFlag.Executable:
+				# Make it executable while honoring the local umask
+				os.chmod(real_path, 0775 & ~umask)
 
 			with open(real_path, 'r+b') as f:
 				chunks_completed = []
