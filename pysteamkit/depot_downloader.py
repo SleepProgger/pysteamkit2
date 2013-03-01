@@ -1,16 +1,18 @@
 from gevent import monkey
 monkey.patch_all()
 
-import gevent, sys, argparse, os, os.path, time
-from gevent.pool import Pool
-from pysteamkit.steam3.client import SteamClient
-from pysteamkit.steam3.cdn_client import CDNClient
-from pysteamkit.steam_base import EResult, EMsg, EServerType, EDepotFileFlag
-from pysteamkit.depot_manifest import DepotManifest
-from pysteamkit.cdn_client_pool import CDNClientPool
-from operator import attrgetter, itemgetter
-from pysteamkit.util import Util
+import argparse
+import os
 from getpass import getpass
+from gevent.pool import Pool
+from operator import attrgetter
+
+from pysteamkit.cdn_client_pool import CDNClientPool
+from pysteamkit.depot_manifest import DepotManifest
+from pysteamkit.steam_base import EResult, EServerType, EDepotFileFlag
+from pysteamkit.steam3.cdn_client import CDNClient
+from pysteamkit.steam3.client import SteamClient
+from pysteamkit.util import Util
 
 parser = argparse.ArgumentParser(description='DepotDownloader downloads depots.')
 parser.add_argument('appid', type=int, help='AppID to download')

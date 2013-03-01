@@ -1,13 +1,19 @@
-from gevent import core, socket
+import binascii
+import gevent
+import StringIO
+import struct
+import traceback
+import zipfile
+from gevent import socket
 from gevent.hub import sleep
+
 from pysteamkit.crypto import CryptoUtil
 from pysteamkit.protobuf import steammessages_base_pb2, steammessages_clientserver_pb2
 from pysteamkit.steamid import SteamID
 from pysteamkit.steam_base import EMsg, EUniverse, EResult
-from pysteamkit.util import Util
 from pysteamkit.steam3 import msg_base
-import struct, binascii, StringIO, zipfile, gevent
-import traceback
+from pysteamkit.util import Util
+
 
 class ProtocolError(Exception):
 	"""

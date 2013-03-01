@@ -1,11 +1,15 @@
-from pysteamkit.crypto import CryptoUtil
-from pysteamkit.util import Util
-from urllib import urlencode
+import StringIO
+import struct
+import urllib2
+import zipfile
 from gevent import socket
 from operator import itemgetter
+from urllib import urlencode
+
+from pysteamkit.crypto import CryptoUtil
+from pysteamkit.util import Util
 from pysteamkit import vdf
-import struct, urllib2
-import zipfile, StringIO
+
 
 class CDNClient(object):
 	def __init__(self, host, port, app_ticket=None, steamid=None):

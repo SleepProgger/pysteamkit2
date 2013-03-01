@@ -1,8 +1,12 @@
-from pysteamkit.crypto import CryptoUtil
+import struct
+import base64
+import StringIO
+import zipfile
 from operator import attrgetter
+
+from pysteamkit.crypto import CryptoUtil
 from pysteamkit.protobuf import content_manifest_pb2
-import struct, base64
-import zipfile, StringIO
+
 
 class DepotManifest(object):
 	PROTOBUF_PAYLOAD_MAGIC = 0x71F617D0

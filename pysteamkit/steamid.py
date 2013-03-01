@@ -1,5 +1,3 @@
-from pysteamkit.steam_base import EUniverse, EAccountType
-
 class SteamID(object):
 	def __init__(self, steamid=0):
 		self.steamid = steamid

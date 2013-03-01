@@ -1,9 +1,11 @@
-from pysteamkit.steam_base import UniverseKeys
-from Crypto.PublicKey import RSA
-from Crypto.Hash import SHA
-from Crypto.Cipher import PKCS1_OAEP, AES
-from Crypto.Signature import PKCS1_v1_5
 from Crypto import Random
+from Crypto.Cipher import PKCS1_OAEP, AES
+from Crypto.Hash import SHA
+from Crypto.PublicKey import RSA
+from Crypto.Signature import PKCS1_v1_5
+
+from pysteamkit.steam_base import UniverseKeys
+
 
 BS = 16
 pad = lambda s: s + (BS - len(s) % BS) * chr(BS - len(s) % BS) 

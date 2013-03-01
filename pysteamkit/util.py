@@ -1,5 +1,8 @@
 import errno
-import os, hashlib, zlib
+import hashlib
+import os
+import zlib
+
 
 class Util:
 	@staticmethod

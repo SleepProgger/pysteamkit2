@@ -1,6 +1,8 @@
+import struct
+
 from pysteamkit.steam_base import EMsg, EUniverse, EResult
 from pysteamkit.protobuf import steammessages_base_pb2
-import struct
+
 
 class MsgHdr:
 	HeaderFmt = '<Iqq'
