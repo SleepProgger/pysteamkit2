@@ -280,9 +280,12 @@ def main(args):
 			Util.makedir(os.path.dirname(real_path))
 			
 			if os.path.exists(real_path):
-				if not args.verify_all and file.filename not in files_changed:
+				st = os.lstat(real_path)
+				if (not args.verify_all
+						and file.filename not in files_changed
+						and file.size == st.st_size):
 					continue
-					
+
 				with open(real_path, 'r+b') as f:
 					f.truncate(file.size)
 					for chunk in sorted_file_chunks:
