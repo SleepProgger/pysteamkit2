@@ -192,12 +192,15 @@ def main():
 	parser.add_argument('--password', type=str, help='Account password')
 	parser.add_argument('--cellid', type=int, help='Cell ID to use for downloads')
 	parser.add_argument('--verify-all', action='store_true', default=False, help='Specify to verify all files')
+	parser.add_argument('--verbose', action='store_true',
+                help='Print lots of extra output')
 	parser.add_argument('--manifest', default='install.manifest',
 		help="Path where local install manifest will be written")
 	args = parser.parse_args()
 
 	logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
-			datefmt='%T', level=logging.INFO)
+			datefmt='%T',
+                        level=logging.DEBUG if args.verbose else logging.INFO)
 
 	install_manifest = DepotManifest.from_file(args.manifest)
 
