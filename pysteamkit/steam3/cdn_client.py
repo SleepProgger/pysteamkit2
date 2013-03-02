@@ -2,7 +2,7 @@ import StringIO
 import struct
 import urllib2
 import zipfile
-from gevent import socket
+from gevent import socket, monkey
 from operator import itemgetter
 from urllib import urlencode
 
@@ -10,6 +10,7 @@ from pysteamkit.crypto import CryptoUtil
 from pysteamkit.util import Util
 from pysteamkit import vdf
 
+monkey.patch_all()
 
 class CDNClient(object):
 	def __init__(self, host, port, app_ticket=None, steamid=None):
