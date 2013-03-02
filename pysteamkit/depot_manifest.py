@@ -49,7 +49,7 @@ class DepotManifest(object):
 			
 			try:
 				filename = CryptoUtil.symmetric_decrypt(filename, depot_key)
-			except:
+			except Exception:
 				print("Unable to decrypt filename for depot manifest")
 				return False
 			
@@ -119,7 +119,7 @@ class DepotManifest(object):
 		try:
 			with open(path, 'rb') as fobj:
 				manifest.parse(fobj.read())
-		except:
+		except Exception:
 			os.remove(path)
 		return manifest
 

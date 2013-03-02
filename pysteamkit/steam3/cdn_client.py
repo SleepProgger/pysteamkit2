@@ -59,7 +59,7 @@ class CDNClient(object):
 			self.session_id = int(sessionkv['sessionid']) & 0xFFFFFFFFFFFFFFFF
 			self.req_counter = int(sessionkv['req-counter'])
 			return True
-		except:
+		except IOError:
 			return False
 	
 	def auth_appticket(self):
@@ -72,7 +72,7 @@ class CDNClient(object):
 			r = urllib2.Request(url, urlencode(payload), headers)
 			r = urllib2.urlopen(r).read()
 			return True
-		except:
+		except IOError:
 			return False
 		
 	def auth_depotid(self, depotid):		
@@ -84,7 +84,7 @@ class CDNClient(object):
 			r = urllib2.urlopen(r).read()
 			self.depot = depotid
 			return True
-		except:
+		except IOError:
 			return False
 		
 	def download_depot_manifest(self, depotid, manifestid):
@@ -96,7 +96,7 @@ class CDNClient(object):
 			return (200, r)
 		except urllib2.HTTPError as err:
 			return (err.code, None)
-		except:
+		except IOError:
 			return (None, None)
 			
 	def download_depot_chunk(self, depotid, chunkid):
@@ -108,7 +108,7 @@ class CDNClient(object):
 			return (200, r)
 		except urllib2.HTTPError as err:
 			return (err.code, None)
-		except:
+		except IOError:
 			return (None, None)
 		
 	@staticmethod

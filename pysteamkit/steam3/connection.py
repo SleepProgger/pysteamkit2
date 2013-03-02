@@ -204,7 +204,7 @@ class TCPConnection(Connection):
 			try:
 				buffer = self.write_buffer[0]
 				self.socket.sendall(buffer)
-			except:
+			except IOError:
 				self.cleanup()
 				return
 
@@ -216,7 +216,7 @@ class TCPConnection(Connection):
 		while self.socket:
 			try:
 				data = self.socket.recv(4096)
-			except:
+			except IOError:
 				# duplication
 				self.cleanup()
 				return
@@ -244,7 +244,7 @@ class TCPConnection(Connection):
 				
 			try:
 				self.dispatch_message(buffer)
-			except:
+			except Exception:
 				print traceback.format_exc()
 
 			self.read_buffer = self.read_buffer[length+8:]

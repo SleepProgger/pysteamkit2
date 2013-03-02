@@ -199,7 +199,7 @@ def main():
 	args = parser.parse_args()
 
 	logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
-			datefmt='%T',
+			datefmt='%X',
                         level=logging.DEBUG if args.verbose else logging.INFO)
 
 	install_manifest = DepotManifest.from_file(args.manifest)
@@ -383,5 +383,7 @@ def main():
 	install_manifest.to_file(args.manifest)
 	print("[%s/%s] Completed" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size)))
 
-
-main()
+try:
+	main()
+except KeyboardInterrupt:
+	pass
