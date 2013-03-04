@@ -192,10 +192,12 @@ class TCPConnection(Connection):
 		if self.socket:
 			self.socket.close()
 			self.socket = None
-		#if self.net_read:
-		#	self.net_read.join()
-		#if self.net_write:
-		#	self.net_write.join()
+		if self.net_read:
+			self.net_read.kill()
+			self.net_read = None
+		if self.net_write:
+			self.net_write.kill()
+			self.net_write = None
 			
 		self.client.handle_disconnected(SocketException())
 		
@@ -226,7 +228,7 @@ class TCPConnection(Connection):
 				return
 				
 			self.data_received(data)
-	
+		
 	def data_received(self, data):
 		self.read_buffer += data
 

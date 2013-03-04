@@ -5,20 +5,18 @@ class CDNClientPool(object):
 		self.clients = [CDNClient(ip, port, app_ticket, steamid) for (ip, port, load) in servers]
 		self.client_pool = []
 		
-	def get_client(self, depot):
+	def get_client(self, depot, app_ticket):
 		while len(self.client_pool) > 0:
 			client = self.client_pool.pop(0)
 			
-			if client.app_ticket or client.depot == depot or client.auth_depotid(depot):
+			if client.depot == depot or (client.app_ticket and client.auth_appticket(depot, app_ticket)) or client.auth_depotid(depot):
 				return client
 
 		while len(self.clients) > 0:
 			client = self.clients.pop(0)
 			
 			if client.initialize():
-				if client.app_ticket:
-					client.auth_appticket()
-				if client.app_ticket or client.depot == depot or client.auth_depotid(depot):
+				if client.depot == depot or (client.app_ticket and client.auth_appticket(depot, app_ticket)) or client.auth_depotid(depot):
 					return client
 				
 		raise Exception("Exhausted CDN client pool")

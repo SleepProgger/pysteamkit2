@@ -12,12 +12,14 @@ class SteamApps():
 		self.licenses = None
 		self.app_cache = dict()
 		self.package_cache = dict()
+		self.ticket_cache = dict()
 		
 		self.client.register_listener(self)
 		self.client.register_message(EMsg.ClientLicenseList, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLicenseList)
 		self.client.register_message(EMsg.PICSProductInfoResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSProductInfoResponse)
 		self.client.register_message(EMsg.PICSAccessTokenResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSAccessTokenResponse)
 		self.client.register_message(EMsg.ClientGetDepotDecryptionKeyResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetDepotDecryptionKeyResponse)
+		self.client.register_message(EMsg.ClientGetAppOwnershipTicketResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetAppOwnershipTicketResponse)
 		
 	def get_licenses(self):
 		if self.licenses:
@@ -85,6 +87,22 @@ class SteamApps():
 		
 		return response.body
 	
+	def get_app_ticket(self, appid):
+		if self.client.steamid.accounttype != EAccountType.Individual:
+			return None
+		
+		if self.ticket_cache.get(appid):
+			return self.ticket_cache[appid]
+			
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientGetAppOwnershipTicket, EMsg.ClientGetAppOwnershipTicket)
+		
+		message.body.app_id = appid
+		
+		response = self.client.wait_for_job(message, EMsg.ClientGetAppOwnershipTicketResponse)
+		
+		self.ticket_cache[appid] = response.body
+		return response.body
+		
 	def has_license_for_app(self, appid):
 		for (packageid, package) in self.package_cache.items():
 			if appid in package['appids'].values():

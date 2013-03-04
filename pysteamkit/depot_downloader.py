@@ -46,7 +46,10 @@ class DepotDownloader(object):
 		self.depots = None
 		self.depot_keys = None
 		self.manifest_ids = None
-
+		
+	def get_app_ticket(self, appid):
+		return self.steamapps.get_app_ticket(appid).ticket
+		
 	def get_depots_for_app(self, appid, filter):
 		if not 'depots' in self.steamapps.app_cache[appid]:
 			return []
@@ -63,7 +66,8 @@ class DepotDownloader(object):
 		return (depotid, depot_key_result.depot_encryption_key)
 		
 	def get_depot_manifest(self, depotid, manifestid):
-		client = self.ccpool.get_client(depotid)
+		ticket = self.steamapps.get_app_ticket(depotid).ticket
+		client = self.ccpool.get_client(depotid, ticket)
 		(status, manifest) = client.download_depot_manifest(depotid, manifestid)
 		if manifest:
 			self.ccpool.return_client(client)
@@ -74,7 +78,8 @@ class DepotDownloader(object):
 		return self.get_depot_chunk(*args)
 		
 	def get_depot_chunk(self, depotid, chunk):
-		client = self.ccpool.get_client(depotid)
+		ticket = self.steamapps.get_app_ticket(depotid).ticket
+		client = self.ccpool.get_client(depotid, ticket)
 		(status, chunk_data) = client.download_depot_chunk(depotid, chunk.sha.encode('hex'))
 		if chunk_data:
 			self.ccpool.return_client(client)
@@ -227,8 +232,7 @@ def main():
 		
 	print("Found %d content servers" % (len(content_servers),))
 	
-	#TODO
-	app_ticket = None
+	app_ticket = dl.get_app_ticket(args.appid)
 	dl.ccpool = CDNClientPool(content_servers, app_ticket, client.steamid)
 	
 	print("Downloading depot manifests")

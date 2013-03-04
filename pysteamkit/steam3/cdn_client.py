@@ -47,11 +47,11 @@ class CDNClient(object):
 		payload = dict(sessionkey = crypted_key)
 		
 		if self.app_ticket:
-			payload['appticket'] = self.appticket
+			payload['appticket'] = CryptoUtil.symmetric_encrypt(self.app_ticket, self.session_key)
 		else:
 			payload['anonymoususer'] = 1
 			payload['steamid'] = self.steamid.steamid
-		
+
 		try:
 			r = urllib2.urlopen(url, urlencode(payload)).read()
 
@@ -63,8 +63,8 @@ class CDNClient(object):
 		except IOError:
 			return False
 	
-	def auth_appticket(self):
-		crypted_ticket = CryptoUtil.symmetric_encrypt(self.app_ticket, self.session_key)
+	def auth_appticket(self, depotid, app_ticket):
+		crypted_ticket = CryptoUtil.symmetric_encrypt(app_ticket, self.session_key)
 
 		(url, headers) = self._make_request_url('authdepot')
 		payload = dict(appticket = crypted_ticket)
@@ -72,6 +72,7 @@ class CDNClient(object):
 		try:
 			r = urllib2.Request(url, urlencode(payload), headers)
 			r = urllib2.urlopen(r).read()
+			self.depot = depotid
 			return True
 		except IOError:
 			return False
