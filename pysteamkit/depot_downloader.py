@@ -48,7 +48,8 @@ class DepotDownloader(object):
 		self.manifest_ids = None
 		
 	def get_app_ticket(self, appid):
-		return self.steamapps.get_app_ticket(appid).ticket
+		app_ticket = self.steamapps.get_app_ticket(appid)
+		return app_ticket.ticket if app_ticket else None
 		
 	def get_depots_for_app(self, appid, filter):
 		if not 'depots' in self.steamapps.app_cache[appid]:
@@ -66,7 +67,7 @@ class DepotDownloader(object):
 		return (depotid, depot_key_result.depot_encryption_key)
 		
 	def get_depot_manifest(self, depotid, manifestid):
-		ticket = self.steamapps.get_app_ticket(depotid).ticket
+		ticket = self.get_app_ticket(depotid)
 		client = self.ccpool.get_client(depotid, ticket)
 		(status, manifest) = client.download_depot_manifest(depotid, manifestid)
 		if manifest:
@@ -78,7 +79,7 @@ class DepotDownloader(object):
 		return self.get_depot_chunk(*args)
 		
 	def get_depot_chunk(self, depotid, chunk):
-		ticket = self.steamapps.get_app_ticket(depotid).ticket
+		ticket = self.get_app_ticket(depotid)
 		client = self.ccpool.get_client(depotid, ticket)
 		(status, chunk_data) = client.download_depot_chunk(depotid, chunk.sha.encode('hex'))
 		if chunk_data:
