@@ -43,11 +43,9 @@ class SteamClient():
 		
 	def handle_connected(self):
 		self.connection_event.set()
-		print('Connection established')
 	
 	def handle_disconnected(self, reason):
 		self.connection_event.clear()
-		print('Disconnected')
 		# throw errors EVERYWHERE
 		for k in self.message_events.keys():
 			if self.message_events[k]:

@@ -20,25 +20,32 @@ class DepotManifest(object):
 		self.payload = content_manifest_pb2.ContentManifestPayload()
 		self.signature = content_manifest_pb2.ContentManifestSignature()
 		self.last_written = 0
+		self.file_mapping = None
 		
 	@property
 	def files(self):
 		return sorted(self.payload.mappings, key=attrgetter('filename'))
 		
-	def _files_dictionary(self):
-		mapping = dict()
+	@property
+	def file_dictionary(self):
+		if self.file_mapping:
+			return self.file_mapping
+		file_mapping = dict()
 		for file in self.payload.mappings:
-			mapping[file.filename] = file
-		return mapping
+			file_mapping[file.filename] = file
+		self.file_mapping = file_mapping
+		return file_mapping
 		
 	def get_files_changed(self, other):
-		my_files = self._files_dictionary()
-		other_files = other._files_dictionary()
-
-		new_or_deleted = set(my_files.keys()) ^ set(other_files.keys())
-		files_changed = [file.filename for file in other_files.values() if file.filename not in new_or_deleted and my_files[file.filename].sha_content != file.sha_content]
+		my_files = self.file_dictionary
+		other_files = other.file_dictionary
+		my_file_set = set(my_files.keys())
+		other_file_set = set(other_files.keys())
 		
-		return list(new_or_deleted) + files_changed
+		deleted = my_file_set - other_file_set
+		files_changed = [file.filename for file in other_files.values() if file.filename not in my_files or my_files[file.filename].sha_content != file.sha_content]
+		
+		return (files_changed, list(deleted))
 	
 	def decrypt_filenames(self, depot_key):
 		if not self.metadata.filenames_encrypted:
@@ -110,22 +117,3 @@ class DepotManifest(object):
 			zip.writestr('z', payload)
 			
 		return zip_buffer.getvalue()
-
-	@classmethod
-	def from_file(cls, path):
-		manifest = cls()
-		if not os.path.exists(path):
-			return manifest
-		try:
-			with open(path, 'rb') as fobj:
-				manifest.parse(fobj.read())
-		except Exception:
-			os.remove(path)
-		return manifest
-
-	def to_file(self, path, lazy=False):
-		if lazy and time.time() - self.last_written < 5:
-			return
-		with open(path, 'wb') as fobj:
-			fobj.write(self.serialize())
-		self.last_written = time.time()
