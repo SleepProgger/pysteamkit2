@@ -2,9 +2,9 @@ import StringIO
 import struct
 import urllib2
 import zipfile
+import requests
 from gevent import socket, monkey
 from operator import itemgetter
-from urllib import urlencode
 
 from pysteamkit.crypto import CryptoUtil
 from pysteamkit.util import Util
@@ -25,6 +25,7 @@ class CDNClient(object):
 		self.req_counter = None
 		
 		self.csid = None
+		self.session = requests.Session()
 		
 	def _make_request_url(self, action, params=''):
 		self.req_counter += 1
@@ -52,66 +53,56 @@ class CDNClient(object):
 			payload['anonymoususer'] = 1
 			payload['steamid'] = self.steamid.steamid
 
-		try:
-			r = urllib2.urlopen(url, urlencode(payload)).read()
-
-			sessionkv = vdf.loads(r)['response']
-			self.csid = sessionkv['csid']
-			self.session_id = int(sessionkv['sessionid']) & 0xFFFFFFFFFFFFFFFF
-			self.req_counter = int(sessionkv['req-counter'])
-			return True
-		except IOError:
+		r = self.session.post(url, payload)
+		
+		if r.status_code != 200:
 			return False
-	
+			
+		sessionkv = vdf.loads(r.content)['response']
+		self.csid = sessionkv['csid']
+		self.session_id = int(sessionkv['sessionid']) & 0xFFFFFFFFFFFFFFFF
+		self.req_counter = int(sessionkv['req-counter'])
+		return True
+
 	def auth_appticket(self, depotid, app_ticket):
 		crypted_ticket = CryptoUtil.symmetric_encrypt(app_ticket, self.session_key)
 
 		(url, headers) = self._make_request_url('authdepot')
 		payload = dict(appticket = crypted_ticket)
 	
-		try:
-			r = urllib2.Request(url, urlencode(payload), headers)
-			r = urllib2.urlopen(r).read()
-			self.depot = depotid
-			return True
-		except IOError:
+		r = self.session.post(url, payload, headers=headers)
+		
+		if r.status_code != 200:
 			return False
+			
+		self.depot = depotid
+		return True
 		
 	def auth_depotid(self, depotid):		
 		(url, headers) = self._make_request_url('authdepot')
 		payload = dict(depotid = depotid)
 
-		try:
-			r = urllib2.Request(url, urlencode(payload), headers)
-			r = urllib2.urlopen(r).read()
-			self.depot = depotid
-			return True
-		except IOError:
-			return False
+		r = self.session.post(url, payload, headers=headers)
 		
+		if r.status_code != 200:
+			return False
+			
+		self.depot = depotid
+		return True
+
 	def download_depot_manifest(self, depotid, manifestid):
 		(url, headers) = self._make_request_url('depot', '%d/manifest/%d/5' % (int(depotid), int(manifestid)))
 		
-		try:
-			r = urllib2.Request(url, headers=headers)
-			r = urllib2.urlopen(r).read()
-			return (200, r)
-		except urllib2.HTTPError as err:
-			return (err.code, None)
-		except IOError:
-			return (None, None)
+		r = self.session.get(url, headers=headers)
+		
+		return (r.status_code, r.content)
 			
 	def download_depot_chunk(self, depotid, chunkid):
 		(url, headers) = self._make_request_url('depot', '%d/chunk/%s' % (int(depotid), chunkid))
 		
-		try:
-			r = urllib2.Request(url, headers=headers)
-			r = urllib2.urlopen(r).read()
-			return (200, r)
-		except urllib2.HTTPError as err:
-			return (err.code, None)
-		except IOError:
-			return (None, None)
+		r = self.session.get(url, headers=headers)
+		
+		return (r.status_code, r.content)
 		
 	@staticmethod
 	def process_chunk(chunk, depot_key):
@@ -125,8 +116,8 @@ class CDNClient(object):
 	def fetch_server_list(host, port, cell_id, type='CS'):
 		url = "http://%s:%d/serverlist/%d/%d/" % (host, port, cell_id, 20)
 		
-		r = urllib2.urlopen(url).read()
-		serverkv = vdf.loads(r)
+		r = requests.get(url)
+		serverkv = vdf.loads(r.content)
 			
 		if serverkv.get('deferred') == '1':
 			return None
