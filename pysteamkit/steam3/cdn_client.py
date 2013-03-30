@@ -94,15 +94,15 @@ class CDNClient(object):
 		(url, headers) = self._make_request_url('depot', '%d/manifest/%d/5' % (int(depotid), int(manifestid)))
 		
 		r = self.session.get(url, headers=headers)
-		
-		return (r.status_code, r.content)
+
+		return (r.status_code, r.content  if r.status_code == 200 else None)
 			
 	def download_depot_chunk(self, depotid, chunkid):
 		(url, headers) = self._make_request_url('depot', '%d/chunk/%s' % (int(depotid), chunkid))
 		
 		r = self.session.get(url, headers=headers)
 		
-		return (r.status_code, r.content)
+		return (r.status_code, r.content if r.status_code == 200 else None)
 		
 	@staticmethod
 	def process_chunk(chunk, depot_key):

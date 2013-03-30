@@ -90,7 +90,10 @@ class DepotDownloader(object):
 		
 	def get_depot_chunk(self, depotid, chunk):
 		ticket = self.get_app_ticket(depotid)
-		client = self.ccpool.get_client(depotid, ticket)
+		try:
+			client = self.ccpool.get_client(depotid, ticket)
+		except:
+			return (chunk, None, None, None)
 		(status, chunk_data) = client.download_depot_chunk(depotid, chunk.sha.encode('hex'))
 		if chunk_data:
 			self.ccpool.return_client(client)
@@ -211,7 +214,7 @@ class DepotDownloader(object):
 					log.error("Did not have sufficient access to download manifest for %d", depotid)
 					return None
 				else:
-					log.error("Missed %d", depotid)
+					log.error("Missed depot manifest for %d", depotid)
 					return None
 		
 		self.manifests = manifests
@@ -412,7 +415,10 @@ def main():
 	
 	log.info("Downloading depot manifests")
 	depot_manifestids = dl.download_depot_manifests()
-			
+	
+	if depot_manifestids is None:
+		return
+		
 	path_prefix = args.dir
 	Util.makedir(path_prefix)
 	
@@ -457,8 +463,11 @@ def main():
 						downloads = [(depotid, chunk) for chunk in chunks_need if not chunk.offset in chunks_completed]
 						
 						for (chunk, offset, chunk_data, status) in pool.imap(dl.get_depot_chunkstar, downloads):
-							if status != 200:
-								log.warn("Chunk failed %s %d" % (chunk.sha.encode('hex'),status))
+							if status is None:
+								log.error("Unable to download chunk %s, out of CDN servers to try", chunk.sha.encode('hex'))
+								return
+							elif status != 200:
+								log.warn("Chunk failed %s %d", chunk.sha.encode('hex'), status)
 								continue
 								
 							chunk_data = CDNClient.process_chunk(chunk_data, dl.depot_keys[depotid])
