@@ -1,12 +1,11 @@
 import gevent.monkey; gevent.monkey.patch_all()
-import argparse
-import logging
-import os
-import json
+import argparse, logging, os
+import binascii, json, struct
 from getpass import getpass
 from gevent.pool import Pool
 from operator import attrgetter
 
+from pysteamkit.crypto import CryptoUtil
 from pysteamkit.cdn_client_pool import CDNClientPool
 from pysteamkit.depot_manifest import DepotManifest
 from pysteamkit.steam_base import EResult, EServerType, EDepotFileFlag
@@ -127,7 +126,7 @@ class DepotDownloader(object):
 					% (appid,))
 		self.appid = appid
 
-	def set_depots(self, depot_filter=(), branch='public'):
+	def set_depots(self, depot_filter=(), branch='public', betapassword=None):
 		assert self.appid
 		depots = self.get_depots_for_app(self.appid, depot_filter)
 		if not depots:
@@ -140,15 +139,25 @@ class DepotDownloader(object):
 			depot = self.get_depot(self.appid, depotid)
 			log.info('Depot %d: "%s"', depotid, depot['name'])
 			manifests = depot.get('manifests')
-			encrypted_manifests = depot.get('encrypted_manifests')
+			encrypted_manifests = depot.get('encryptedmanifests')
 			if manifests and manifests.get(branch):
 				manifest = manifests[branch]
 			elif encrypted_manifests and encrypted_manifests.get(branch):
-				# FIXME
-				assert False
+				while not betapassword:
+					betapassword = raw_input('Please enter the password for branch %s:' % (branch,))
+					
+				encrypted_gid = binascii.a2b_hex(encrypted_manifests[branch].get('encrypted_gid'))
+				manifest_bytes = CryptoUtil.verify_and_decrypt_password(encrypted_gid, betapassword)
+				
+				if manifest_bytes == False:
+					log.error("Unable to decrypt manifest for branch %s with given password", branch)
+					return False
+					
+				(manifest,) = struct.unpack('q', manifest_bytes)
 			else:
-				# FIXME
-				assert False
+				log.error("Unable to find manifest for branch %s", branch)
+				return False
+				
 			manifest_ids[depotid] = manifest
 			
 			existing_manifest = self.install['manifests'].get(depotid)
@@ -169,6 +178,7 @@ class DepotDownloader(object):
 		self.manifest_ids = manifest_ids
 		self.existing_manifest_ids = existing_manifest_ids
 		self.depot_keys = depot_keys
+		return True
 		
 	def _check_or_add_manifest_files(self, manifest_ids, manifests, manifests_to_retrieve):
 		for (depotid, manifestid) in manifest_ids.iteritems():
@@ -367,6 +377,7 @@ def main():
 	parser = argparse.ArgumentParser(description='DepotDownloader downloads depots.')
 	parser.add_argument('appid', type=int, help='AppID to download')
 	parser.add_argument('--branch', type=str, default='public', help='Application branch to download')
+	parser.add_argument('--betapassword', type=str, help='Password supplied for branch')
 	parser.add_argument('--dir', type=str, default='downloads/', help='Directory to operate within')
 	parser.add_argument('--depots', type=int, nargs='*', help='Specific depots to download')
 	parser.add_argument('--username', type=str, help='Username to sign in with')
@@ -380,7 +391,7 @@ def main():
 	logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
 			datefmt='%X',
                         level=logging.DEBUG if args.verbose else logging.INFO)
-	
+		
 	install = load_install_data()
 	Util.makedir('depots/')
 	
@@ -391,13 +402,16 @@ def main():
 		
 	dl = DepotDownloader(client, install)
 	dl.set_appid(args.appid)
-	dl.set_depots(args.depots)
+	
+	if not dl.set_depots(args.depots, args.branch, args.betapassword):
+		return
 	
 	log.info("Building CDN server list")
 	base_server_list = client.server_list[EServerType.CS]
 	
 	if base_server_list == None or len(base_server_list) == 0:
 		log.error("No content servers to bootstrap from")
+		return
 	
 	content_servers = None
 	for (ip, port) in base_server_list:

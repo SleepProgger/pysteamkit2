@@ -1,3 +1,4 @@
+import hashlib, hmac, struct
 from Crypto import Random
 from Crypto.Cipher import PKCS1_OAEP, AES
 from Crypto.Hash import SHA
@@ -50,3 +51,13 @@ class CryptoUtil:
 
 		aes = AES.new(key, AES.MODE_CBC, decrypted_iv)
 		return unpad(aes.decrypt(input[BS:]))
+
+	@staticmethod
+	def verify_and_decrypt_password(input, password):
+		key = hashlib.sha256(str(password)).digest()
+		hmacsha = hmac.new(key, input[:32], hashlib.sha1)
+
+		if hmacsha.digest() != input[32:]:
+			return False
+			
+		return CryptoUtil.symmetric_decrypt(input[:32], key)
