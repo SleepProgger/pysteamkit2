@@ -3,14 +3,12 @@ import struct
 import urllib2
 import zipfile
 import requests
-from gevent import socket, monkey
+from gevent import socket
 from operator import itemgetter
 
 from pysteamkit.crypto import CryptoUtil
 from pysteamkit.util import Util
 from pysteamkit import vdf
-
-monkey.patch_all()
 
 class CDNClient(object):
 	def __init__(self, host, port, app_ticket=None, steamid=None):
@@ -95,7 +93,7 @@ class CDNClient(object):
 		
 		r = self.session.get(url, headers=headers)
 
-		return (r.status_code, r.content  if r.status_code == 200 else None)
+		return (r.status_code, r.content if r.status_code == 200 else None)
 			
 	def download_depot_chunk(self, depotid, chunkid):
 		(url, headers) = self._make_request_url('depot', '%d/chunk/%s' % (int(depotid), chunkid))
