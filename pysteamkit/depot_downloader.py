@@ -1,6 +1,6 @@
 import gevent.monkey; gevent.monkey.patch_all()
 import argparse, logging, os
-import binascii, json, struct
+import binascii, json, re, struct
 from getpass import getpass
 from gevent.pool import Pool
 from operator import attrgetter
@@ -234,7 +234,7 @@ class DepotDownloader(object):
 	def record_depot_state(self, depotid, manifestid):
 		self.install['manifests'][depotid] = manifestid
 		
-	def build_and_verify_download_list(self, appid, verify_all, path_prefix):
+	def build_and_verify_download_list(self, appid, verify_all, path_prefix, filelist = None):
 		total_download_size = 0
 		depot_download_list = []
 
@@ -265,6 +265,9 @@ class DepotDownloader(object):
 				os.unlink(real_path)
 				
 			for file in manifest.files:
+				if filelist and not file_matches_filter(file.filename, filelist):
+					continue
+					
 				sorted_current_chunks = sorted(file.chunks, key=attrgetter('offset'))				
 				translated = file.filename.replace('\\', os.path.sep)
 				real_path = os.path.join(path_prefix, translated)
@@ -366,13 +369,37 @@ def signin(args):
 def load_install_data():
 	if not os.path.exists('install.json'):
 		return {'manifests': {}}
-	with open('install.json') as f:
+	with open('install.json', 'r') as f:
 		return json.load(f)
 
 def save_install_data(install):
 	with open('install.json', 'w') as f:
 		json.dump(install, f, sort_keys=True, indent=4, separators=(',', ': '))
 
+def load_filelist(file):
+	regexes = []
+	plain = []
+	with open(file, 'r') as f:
+		lines = f.readlines()
+		for line in lines:
+			line = line.rstrip(' \t\r\n\0')
+			regex = re.compile(line)
+			if regex:
+				regexes.append(regex)
+			else:
+				plain.append(line)
+	return (regexes, plain)
+	
+def file_matches_filter(filename, filefilter):
+	(regexes, plain) = filefilter
+	for regex in regexes:
+		if regex.match(filename):
+			return True
+	for name in plain:
+		if filename == name:
+			return True
+	return False
+	
 def main():
 	parser = argparse.ArgumentParser(description='DepotDownloader downloads depots.')
 	parser.add_argument('appid', type=int, help='AppID to download')
@@ -384,6 +411,7 @@ def main():
 	parser.add_argument('--password', type=str, help='Account password')
 	parser.add_argument('--cellid', type=int, help='Cell ID to use for downloads')
 	parser.add_argument('--verify-all', action='store_true', default=False, help='Specify to verify all files')
+	parser.add_argument('--filelist', type=str, help='Specify a file filter')
 	parser.add_argument('--verbose', action='store_true',
                 help='Print lots of extra output')
 	args = parser.parse_args()
@@ -391,6 +419,10 @@ def main():
 	logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
 			datefmt='%X',
                         level=logging.DEBUG if args.verbose else logging.INFO)
+	
+	filefilter = None
+	if args.filelist:
+		filefilter = load_filelist(args.filelist)
 		
 	install = load_install_data()
 	Util.makedir('depots/')
@@ -438,7 +470,7 @@ def main():
 	Util.makedir(path_prefix)
 	
 	log.info("Verifying existing files")
-	(depot_download_list, total_download_size) = dl.build_and_verify_download_list(args.appid, args.verify_all, path_prefix)	
+	(depot_download_list, total_download_size) = dl.build_and_verify_download_list(args.appid, args.verify_all, path_prefix, filelist = filefilter)	
 	
 	if total_download_size > 0:
 		log.info('%s to download' % (Util.sizeof_fmt(total_download_size),))
