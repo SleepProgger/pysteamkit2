@@ -133,9 +133,23 @@ class DepotDownloader(object):
 			raise DownloaderError("No depots available for app %d "
 					"given filter %s" % (self.appid, depot_filter))
 
+		log.info("Fetching decryption keys")
+		depot_keys = {}
+		pool = Pool(4)
+		keys = [(self.appid, depotid) for depotid in depots]
+		
+		for (depotid, depot_key) in pool.imap(self.get_depot_keystar, keys):
+			if depot_key is None:
+				#TODO: filter this out before with license checks
+				log.warn("Could not get depot key for depot %d, skipped", depotid)
+			else:
+				depot_keys[depotid] = depot_key
+			
 		manifest_ids = {}
 		existing_manifest_ids = {}
 		for depotid in depots:
+			if not depot_keys.get(depotid):
+				continue
 			depot = self.get_depot(self.appid, depotid)
 			log.info('Depot %d: "%s"', depotid, depot['name'])
 			manifests = depot.get('manifests')
@@ -163,17 +177,6 @@ class DepotDownloader(object):
 			existing_manifest = self.install['manifests'].get(depotid)
 			if existing_manifest:
 				existing_manifest_ids[depotid] = existing_manifest
-
-		log.info("Fetching decryption keys")
-		depot_keys = {}
-		pool = Pool(4)
-		keys = [(self.appid, depotid) for (depotid, manifestid) in manifest_ids.iteritems()]
-		
-		for (depotid, depot_key) in pool.imap(self.get_depot_keystar, keys):
-			if depot_key is None:
-				raise DownloaderError("Could not get depot key for depot %d"
-						% (depotid,))
-			depot_keys[depotid] = depot_key
 
 		self.manifest_ids = manifest_ids
 		self.existing_manifest_ids = existing_manifest_ids
