@@ -174,7 +174,7 @@ class DepotDownloader(object):
 				
 			manifest_ids[depotid] = manifest
 			
-			existing_manifest = self.install['manifests'].get(depotid)
+			existing_manifest = self.install['manifests'].get(str(depotid))
 			if existing_manifest:
 				existing_manifest_ids[depotid] = existing_manifest
 
@@ -235,7 +235,7 @@ class DepotDownloader(object):
 		return self.manifest_ids
 
 	def record_depot_state(self, depotid, manifestid):
-		self.install['manifests'][depotid] = manifestid
+		self.install['manifests'][str(depotid)] = str(manifestid)
 		
 	def build_and_verify_download_list(self, appid, verify_all, path_prefix, filelist = None):
 		total_download_size = 0
@@ -261,12 +261,16 @@ class DepotDownloader(object):
 				existing_file_dictionary = existing_manifest.file_dictionary
 
 			for file in files_deleted:
-				translated = file.filename.replace('\\', os.path.sep)
+				translated = file.replace('\\', os.path.sep)
 				real_path = os.path.join(path_prefix, translated)
 				
 				log.debug("Deleting %s", real_path)
-				os.unlink(real_path)
-				
+				try:
+					os.unlink(real_path)
+				except:
+					#TODO: handle directories
+					pass
+					
 			for file in manifest.files:
 				if filelist and not file_matches_filter(file.filename, filelist):
 					continue
@@ -295,7 +299,7 @@ class DepotDownloader(object):
 					sorted_file_chunks = None
 					chunks_needed = []
 					existing_chunks = []
-					existing_chunk_hashes = []
+					existing_chunk_hashes = {}
 					existing_file_mapping = existing_file_dictionary.get(file.filename)
 					if existing_file_mapping:
 						sorted_file_chunks = sorted(existing_file_mapping.chunks, key=attrgetter('offset'))
@@ -307,22 +311,21 @@ class DepotDownloader(object):
 							f.seek(chunk.offset)
 							bytes = f.read(chunk.cb_original)
 							
-							if Util.adler_hash(bytes) != chunk.crc:
-								if not existing_file_mapping:
-									chunks_needed.append(chunk)
-									total_download_size += chunk.cb_original
-								continue
-								
-							existing_chunks.append(chunk)
-							existing_chunk_hashes.append(chunk.sha)
+							if Util.adler_hash(bytes) == chunk.crc:
+								existing_chunk_hashes[chunk.sha] = chunk
+							elif not existing_file_mapping:
+								chunks_needed.append(chunk)
+								total_download_size += chunk.cb_original
 
 					if existing_file_mapping:
 						for chunk in sorted_current_chunks:
-							if chunk.sha in existing_chunk_hashes:
+							existing_chunk = existing_chunk_hashes.get(chunk.sha)
+							if existing_chunk:
+								existing_chunks.append((chunk, existing_chunk))
 								continue
-
-							chunks_needed.append(chunk)
+								
 							total_download_size += chunk.cb_original
+							chunks_needed.append(chunk)
 							
 					if len(chunks_needed) > 0 or file.size != st.st_size:
 						depot_files.append((file, chunks_needed, existing_chunks))
@@ -333,6 +336,8 @@ class DepotDownloader(object):
 					
 			if len(depot_files) > 0:
 				depot_download_list.append((depotid, manifestid, depot_files))
+			else:
+				self.record_depot_state(depotid, manifestid)
 				
 		return (depot_download_list, total_download_size)
 			
@@ -474,6 +479,7 @@ def main():
 	
 	log.info("Verifying existing files")
 	(depot_download_list, total_download_size) = dl.build_and_verify_download_list(args.appid, args.verify_all, path_prefix, filelist = filefilter)	
+	save_install_data(install)
 	
 	if total_download_size > 0:
 		log.info('%s to download' % (Util.sizeof_fmt(total_download_size),))
@@ -504,8 +510,8 @@ def main():
 					chunks_completed = []
 					
 					if chunks_have is not None:
-						for chunk in chunks_have:
-							freal.seek(chunk.offset)
+						for (chunk, prev_chunk) in chunks_have:
+							freal.seek(prev_chunk.offset)
 							f.seek(chunk.offset)
 							f.write(freal.read(chunk.cb_original))
 						
