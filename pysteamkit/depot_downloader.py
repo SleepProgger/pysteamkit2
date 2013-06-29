@@ -15,7 +15,10 @@ from pysteamkit.util import Util
 
 log = logging.getLogger('dd')
 
-
+umask = None
+if os.name == 'posix':
+	umask = os.umask(0)
+			
 class SteamClientHandler(object):
 	def get_sentry_file(self, username):
 		filename = 'sentry_%s.bin' % (username,)
@@ -243,7 +246,6 @@ class DepotDownloader(object):
 
 		# Get process umask, for chmod'ing files later on.
 		if os.name == 'posix':
-			umask = os.umask(0)
 			os.umask(umask)
 
 		for (depotid, manifestid) in self.manifest_ids.iteritems():
