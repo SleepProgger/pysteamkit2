@@ -3,6 +3,7 @@ import argparse, logging, os
 import binascii, json, re, struct
 from getpass import getpass
 from gevent.pool import Pool
+from gevent.coros import Semaphore
 from operator import attrgetter
 
 from pysteamkit.crypto import CryptoUtil
@@ -53,6 +54,11 @@ class DepotDownloader(object):
 		self.manifest_ids = None
 		self.existing_manifest_ids = None
 		self.manifests = None
+		self.path_prefix = None
+		self.total_bytes_downloaded = 0
+		self.total_download_size = 0
+		self.net_action_pool = Pool(4)
+		self.file_semaphore = Semaphore(8)
 		
 	def get_app_ticket(self, appid):
 		app_ticket = self.steamapps.get_app_ticket(appid)
@@ -138,10 +144,9 @@ class DepotDownloader(object):
 
 		log.info("Fetching decryption keys")
 		depot_keys = {}
-		pool = Pool(4)
 		keys = [(self.appid, depotid) for depotid in depots]
 		
-		for (depotid, depot_key) in pool.imap(self.get_depot_keystar, keys):
+		for (depotid, depot_key) in self.net_action_pool.imap(self.get_depot_keystar, keys):
 			if depot_key is None:
 				#TODO: filter this out before with license checks
 				log.warn("Could not get depot key for depot %d, skipped", depotid)
@@ -186,6 +191,10 @@ class DepotDownloader(object):
 		self.depot_keys = depot_keys
 		return True
 		
+	def set_path_prefix(self, path_prefix):
+		self.path_prefix = path_prefix
+		Util.makedir(path_prefix)		
+		
 	def _check_or_add_manifest_files(self, manifest_ids, manifests, manifests_to_retrieve):
 		for (depotid, manifestid) in manifest_ids.iteritems():
 			if os.path.exists('depots/%d_%s.manifest' % (depotid, manifestid)):
@@ -202,7 +211,6 @@ class DepotDownloader(object):
 		depot_manifests_retrieved = []
 		manifests = {}
 		num_tries = 0
-		pool = Pool(4)
 
 		self._check_or_add_manifest_files(self.manifest_ids, manifests, manifests_to_retrieve)
 		self._check_or_add_manifest_files(self.existing_manifest_ids, manifests, manifests_to_retrieve)
@@ -211,7 +219,7 @@ class DepotDownloader(object):
 			num_tries += 1
 			manifests_needed = [(depotid, manifestid) for (depotid, manifestid) in manifests_to_retrieve if depotid not in depot_manifests_retrieved]
 			
-			for (depotid, manifestid, manifest, status) in pool.imap(self.get_depot_manifeststar, manifests_needed):
+			for (depotid, manifestid, manifest, status) in self.net_action_pool.imap(self.get_depot_manifeststar, manifests_needed):
 				if manifest:
 					log.info("Got manifest %s for %d", manifestid, depotid)
 					depot_manifests_retrieved.append(depotid)
@@ -240,7 +248,7 @@ class DepotDownloader(object):
 	def record_depot_state(self, depotid, manifestid):
 		self.install['manifests'][str(depotid)] = str(manifestid)
 		
-	def build_and_verify_download_list(self, appid, verify_all, path_prefix, filelist = None):
+	def build_and_verify_download_list(self, appid, verify_all, filelist = None):
 		total_download_size = 0
 		depot_download_list = []
 
@@ -264,7 +272,7 @@ class DepotDownloader(object):
 
 			for file in files_deleted:
 				translated = file.replace('\\', os.path.sep)
-				real_path = os.path.join(path_prefix, translated)
+				real_path = os.path.join(self.path_prefix, translated)
 				
 				log.debug("Deleting %s", real_path)
 				try:
@@ -279,7 +287,7 @@ class DepotDownloader(object):
 					
 				sorted_current_chunks = sorted(file.chunks, key=attrgetter('offset'))				
 				translated = file.filename.replace('\\', os.path.sep)
-				real_path = os.path.join(path_prefix, translated)
+				real_path = os.path.join(self.path_prefix, translated)
 					
 				if file.flags & EDepotFileFlag.Directory:
 					Util.makedir(real_path)
@@ -337,12 +345,86 @@ class DepotDownloader(object):
 					
 					
 			if len(depot_files) > 0:
-				depot_download_list.append((depotid, manifestid, depot_files))
+				depot_download_list.append((appid, depotid, manifestid, depot_files))
 			else:
 				self.record_depot_state(depotid, manifestid)
 				
 		return (depot_download_list, total_download_size)
 			
+	def reset_download_counters(self, total_download_size):
+		self.total_bytes_downloaded = 0
+		self.total_download_size = total_download_size
+	
+	def perform_download_actions(self, depot_download_list):
+		depot_downloads = [gevent.spawn(self.perform_depot_download, depot_data) for depot_data in depot_download_list]
+		gevent.joinall(depot_downloads)
+		
+	def perform_depot_download(self, depot_data):
+		(appid, depotid, manifestid, depot_files) = depot_data
+		
+		depot = self.get_depot(appid, depotid)
+		log.info("Downloading \"%s\"" % (depot['name'],))
+
+		depot_file_downloads = [gevent.spawn(self.perform_file_download_and_update, (depotid, file_data)) for file_data in depot_files]
+		gevent.joinall(depot_file_downloads)
+		
+		self.record_depot_state(depotid, manifestid)
+
+	def perform_file_download_and_update(self, depotfiledata):
+		(depotid, file_data) = depotfiledata
+		(file, chunks_need, chunks_have) = file_data
+		
+		translated = file.filename.replace('\\', os.path.sep)
+		real_path = os.path.join(self.path_prefix, translated)
+		
+		self.file_semaphore.acquire()
+
+		if not os.path.exists(real_path):
+			with open(real_path, 'w+b') as f:
+				f.truncate(0)
+					
+		with open(real_path, 'rb') as freal:
+			with open(real_path + '.partial', 'w+b') as f:
+				f.truncate(file.size)
+				chunks_completed = []
+					
+				if chunks_have is not None:
+					for (chunk, prev_chunk) in chunks_have:
+						freal.seek(prev_chunk.offset)
+						f.seek(chunk.offset)
+						f.write(freal.read(chunk.cb_original))
+						
+				while len(chunks_completed) < len(chunks_need):
+					downloads = [(depotid, chunk) for chunk in chunks_need if not chunk.offset in chunks_completed]
+					
+					for (chunk, offset, chunk_data, status) in self.net_action_pool.imap(self.get_depot_chunkstar, downloads):
+						if status is None:
+							log.error("Unable to download chunk %s, out of CDN servers to try", chunk.sha.encode('hex'))
+							self.file_semaphore.release()
+							return
+						elif status != 200:
+							log.warn("Chunk failed %s %d", chunk.sha.encode('hex'), status)
+							continue
+								
+						chunk_data = CDNClient.process_chunk(chunk_data, self.depot_keys[depotid])
+						f.seek(offset)
+						f.write(chunk_data)
+						self.total_bytes_downloaded += len(chunk_data)
+						chunks_completed.append(offset)
+			
+		if os.name != 'posix':
+			os.unlink(real_path)
+		os.rename(real_path + '.partial', real_path)
+		
+		if os.name == 'posix' and file.flags & EDepotFileFlag.Executable:
+			# Make it executable while honoring the local umask
+			os.chmod(real_path, 0775 & ~umask)
+
+		self.file_semaphore.release()
+		
+		log.info("[%s/%s] %s" % (Util.sizeof_fmt(self.total_bytes_downloaded),
+			Util.sizeof_fmt(self.total_download_size), translated))
+		
 def signin(args):
 	while args.username and not args.password:
 		args.password = getpass('Please enter the password for "' + args.username + '": ')
@@ -476,11 +558,10 @@ def main():
 	if depot_manifestids is None:
 		return
 		
-	path_prefix = args.dir
-	Util.makedir(path_prefix)
-	
+	dl.set_path_prefix(args.dir)
+
 	log.info("Verifying existing files")
-	(depot_download_list, total_download_size) = dl.build_and_verify_download_list(args.appid, args.verify_all, path_prefix, filelist = filefilter)	
+	(depot_download_list, total_download_size) = dl.build_and_verify_download_list(args.appid, args.verify_all, filelist = filefilter)	
 	save_install_data(install)
 	
 	if total_download_size > 0:
@@ -488,62 +569,10 @@ def main():
 	else:
 		log.info('Nothing to download')
 		return
-		
-	total_bytes_downloaded = 0
-	
-	pool = Pool(4)
-	for (depotid, manifestid, depot_files) in depot_download_list:
-		depot = dl.get_depot(args.appid, depotid)
-		log.info("Downloading \"%s\"" % (depot['name'],))
 
-		for (file, chunks_need, chunks_have) in depot_files:
-			translated = file.filename.replace('\\', os.path.sep)
-			real_path = os.path.join(path_prefix, translated)
-			log.info("[%s/%s] %s" % (Util.sizeof_fmt(total_bytes_downloaded),
-				Util.sizeof_fmt(total_download_size), translated))
-
-			if not os.path.exists(real_path):
-				with open(real_path, 'w+b') as f:
-					f.truncate(0)
-					
-			with open(real_path, 'rb') as freal:
-				with open(real_path + '.partial', 'w+b') as f:
-					f.truncate(file.size)
-					chunks_completed = []
-					
-					if chunks_have is not None:
-						for (chunk, prev_chunk) in chunks_have:
-							freal.seek(prev_chunk.offset)
-							f.seek(chunk.offset)
-							f.write(freal.read(chunk.cb_original))
-						
-					while len(chunks_completed) < len(chunks_need):
-						downloads = [(depotid, chunk) for chunk in chunks_need if not chunk.offset in chunks_completed]
-						
-						for (chunk, offset, chunk_data, status) in pool.imap(dl.get_depot_chunkstar, downloads):
-							if status is None:
-								log.error("Unable to download chunk %s, out of CDN servers to try", chunk.sha.encode('hex'))
-								return
-							elif status != 200:
-								log.warn("Chunk failed %s %d", chunk.sha.encode('hex'), status)
-								continue
-								
-							chunk_data = CDNClient.process_chunk(chunk_data, dl.depot_keys[depotid])
-							f.seek(offset)
-							f.write(chunk_data)
-							total_bytes_downloaded += len(chunk_data)
-							chunks_completed.append(offset)
-			
-			if os.name != 'posix':
-				os.unlink(real_path)
-			os.rename(real_path + '.partial', real_path)
-			
-			if os.name == 'posix' and file.flags & EDepotFileFlag.Executable:
-				# Make it executable while honoring the local umask
-				os.chmod(real_path, 0775 & ~umask)
-		
-		dl.record_depot_state(depotid, manifestid)
-		save_install_data(install)
+	dl.reset_download_counters(total_download_size)
+	dl.perform_download_actions(depot_download_list)
+	save_install_data(install)
 						
 	log.info("[%s/%s] Completed" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size)))
 

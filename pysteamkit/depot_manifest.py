@@ -44,7 +44,7 @@ class DepotManifest(object):
 		
 		deleted = my_file_set - other_file_set
 		files_changed = [file.filename for file in other_files.values() if file.filename not in my_files or my_files[file.filename].sha_content != file.sha_content]
-		
+
 		return (files_changed, list(deleted))
 	
 	def decrypt_filenames(self, depot_key):
