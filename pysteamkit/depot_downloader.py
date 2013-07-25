@@ -359,6 +359,8 @@ class DepotDownloader(object):
 		depot_downloads = [gevent.spawn(self.perform_depot_download, depot_data) for depot_data in depot_download_list]
 		gevent.joinall(depot_downloads)
 		
+		log.info("[%s/%s] Completed" % (Util.sizeof_fmt(self.total_bytes_downloaded), Util.sizeof_fmt(self.total_download_size)))
+		
 	def perform_depot_download(self, depot_data):
 		(appid, depotid, manifestid, depot_files) = depot_data
 		
@@ -573,8 +575,6 @@ def main():
 	dl.reset_download_counters(total_download_size)
 	dl.perform_download_actions(depot_download_list)
 	save_install_data(install)
-						
-	log.info("[%s/%s] Completed" % (Util.sizeof_fmt(total_bytes_downloaded), Util.sizeof_fmt(total_download_size)))
 
 try:
 	main()
