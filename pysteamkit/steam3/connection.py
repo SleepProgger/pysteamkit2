@@ -49,7 +49,7 @@ class Connection(object):
 		
 	def cleanup(self):
 		if self.heartbeat:
-			self.heartbeat.join()
+			self.heartbeat.kill()
 			
 		self.netfilter = None
 		self.session_id = None
@@ -102,8 +102,6 @@ class Connection(object):
 		if message.body.universe != EUniverse.Public:
 			raise ProtocolError('Unexpected universe in encryption request')
 			
-		#print("Channel encrypt request. Proto: ", message.body.protocol_version, "Universe: ", message.body.universe)
-		
 		session_key = CryptoUtil.create_session_key()
 		crypted_key = CryptoUtil.rsa_encrypt(session_key)
 		key_crc = binascii.crc32(crypted_key) & 0xFFFFFFFF

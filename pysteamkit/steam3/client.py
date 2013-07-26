@@ -30,6 +30,7 @@ class SteamClient():
 		self.steamapps = SteamApps(self)
 		
 		self.register_message(EMsg.ClientLogOnResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLogonResponse)
+		self.register_message(EMsg.ClientLoggedOff, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLoggedOff)
 		self.register_message(EMsg.ClientSessionToken, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientSessionToken)
 
 	def connect(self, address):
@@ -39,6 +40,9 @@ class SteamClient():
 		return False
 	
 	def disconnect(self):
+		if self.steamid:
+			self.logout()
+
 		self.connection.disconnect()
 		
 	def handle_connected(self):
@@ -108,13 +112,16 @@ class SteamClient():
 		logonResponse = self.wait_for_message(EMsg.ClientLogOnResponse)
 		return logonResponse.body
 
-	def login(self, username=None, password=None, login_key=None, auth_code=None):
+	def login(self, username=None, password=None, login_key=None, auth_code=None, steamid=0):
 		self.username = username
 		
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogon, EMsg.ClientLogon)
 
 		message.proto_header.client_sessionid = 0
-		message.proto_header.steamid = SteamID.make_from(0, 0, EUniverse.Public, EAccountType.Individual).steamid
+		if steamid > 0:
+			message.proto_header.steamid = steamid
+		else:
+			message.proto_header.steamid = SteamID.make_from(0, 0, EUniverse.Public, EAccountType.Individual).steamid
 		message.body.protocol_version = 65575
 		message.body.client_package_version = 1771
 		message.body.client_os_type = 10
@@ -142,6 +149,13 @@ class SteamClient():
 
 		logonResponse = self.wait_for_message(EMsg.ClientLogOnResponse)
 		return logonResponse.body
+		
+	def logout(self):
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientLogOff, EMsg.ClientLogOff)
+
+		self.connection.send_message(message)
+		return None
+
 		
 	def get_session_token(self):
 		if self.session_token:

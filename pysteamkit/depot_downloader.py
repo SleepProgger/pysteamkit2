@@ -12,6 +12,7 @@ from pysteamkit.depot_manifest import DepotManifest
 from pysteamkit.steam_base import EResult, EServerType, EDepotFileFlag
 from pysteamkit.steam3.cdn_client import CDNClient
 from pysteamkit.steam3.client import SteamClient
+from pysteamkit.steamid import SteamID
 from pysteamkit.util import Util
 
 log = logging.getLogger('dd')
@@ -427,7 +428,7 @@ class DepotDownloader(object):
 		log.info("[%s/%s] %s" % (Util.sizeof_fmt(self.total_bytes_downloaded),
 			Util.sizeof_fmt(self.total_download_size), translated))
 		
-def signin(args):
+def signin(args, install):
 	while args.username and not args.password:
 		args.password = getpass('Please enter the password for "' + args.username + '": ')
 	
@@ -436,8 +437,17 @@ def signin(args):
 		log.error("Unable to connect")
 		return False
 
+	alternate_steamid = 0
+	if args.altinstance:
+		if not args.username in install['accounts']:
+			log.info("Cannot use alternate instance without first logging into account '%s'", args.username)
+		else:
+			steamid = SteamID(int(install['accounts'][args.username]))
+			steamid.instance = 2
+			alternate_steamid = steamid.steamid
+		
 	if args.username:
-		logon_result = client.login(args.username, args.password)
+		logon_result = client.login(args.username, args.password, steamid=alternate_steamid)
 	else:
 		logon_result = client.login_anonymous()
 
@@ -453,7 +463,16 @@ def signin(args):
 	if logon_result.eresult != EResult.OK:
 		log.error("logon failed", logon_result.eresult)
 		return False
-
+			
+	if client.steamid.instance == 1:
+		install['accounts'][args.username] = str(client.steamid.steamid)
+		save_install_data(install)
+		
+		if args.altinstance:
+			log.info("Switching to alternate instance..")
+			client.disconnect()
+			return signin(args, install)
+	
 	log.info("Signed into Steam3 as %s" % (str(client.steamid),))
 	if args.cellid == None:
 		log.warn("No cell id specified, using Steam3 specified: %d" % (logon_result.cell_id,))
@@ -462,9 +481,13 @@ def signin(args):
 
 def load_install_data():
 	if not os.path.exists('install.json'):
-		return {'manifests': {}}
+		return {'manifests': {}, 'accounts': {}}
 	with open('install.json', 'r') as f:
-		return json.load(f)
+		json_install = json.load(f)
+		#upgrade
+		if not 'accounts' in json_install:
+			json_install['accounts'] = {}
+		return json_install
 
 def save_install_data(install):
 	with open('install.json', 'w') as f:
@@ -506,6 +529,8 @@ def main():
 	parser.add_argument('--cellid', type=int, help='Cell ID to use for downloads')
 	parser.add_argument('--verify-all', action='store_true', default=False, help='Specify to verify all files')
 	parser.add_argument('--filelist', type=str, help='Specify a file filter')
+	parser.add_argument('--altinstance', action='store_true', 
+				help='Use an alternate account instance. Requires logging into the account once')
 	parser.add_argument('--verbose', action='store_true',
                 help='Print lots of extra output')
 	args = parser.parse_args()
@@ -521,7 +546,7 @@ def main():
 	install = load_install_data()
 	Util.makedir('depots/')
 	
-	client = signin(args)
+	client = signin(args, install)
 	
 	if client == False:
 		return
