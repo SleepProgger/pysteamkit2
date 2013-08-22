@@ -88,8 +88,14 @@ class DepotDownloader(object):
 		
 	def get_depot_manifest(self, depotid, manifestid):
 		ticket = self.get_app_ticket(depotid)
-		client = self.ccpool.get_client(depotid, ticket)
+		try:
+			client = self.ccpool.get_client(depotid, ticket)
+		except:
+			log.error("Unable to initialize any CDN clients for depot id %s manifest %s", depotid, manifestid)
+			return (depotid, manifestid, None, 404)
+			
 		(status, manifest) = client.download_depot_manifest(depotid, manifestid)
+
 		if manifest:
 			self.ccpool.return_client(client)
 			return (depotid, manifestid, manifest, status)
@@ -103,8 +109,11 @@ class DepotDownloader(object):
 		try:
 			client = self.ccpool.get_client(depotid, ticket)
 		except:
+			log.error("Unable to initialize any CDN clients for depot id %s chunk %s", depotid, chunk.sha.encode('hex'))
 			return (chunk, None, None, None)
+
 		(status, chunk_data) = client.download_depot_chunk(depotid, chunk.sha.encode('hex'))
+
 		if chunk_data:
 			self.ccpool.return_client(client)
 			return (chunk, chunk.offset, chunk_data, status)
@@ -207,7 +216,7 @@ class DepotDownloader(object):
 			else:
 				manifests_to_retrieve.append((depotid, manifestid))
 				
-	def download_depot_manifests(self):
+	def download_depot_manifests(self, additional_depot_manifests={}):
 		manifests_to_retrieve = []
 		depot_manifests_retrieved = []
 		manifests = {}
@@ -215,7 +224,8 @@ class DepotDownloader(object):
 
 		self._check_or_add_manifest_files(self.manifest_ids, manifests, manifests_to_retrieve)
 		self._check_or_add_manifest_files(self.existing_manifest_ids, manifests, manifests_to_retrieve)
-
+		self._check_or_add_manifest_files(additional_depot_manifests, manifests, manifests_to_retrieve)
+		
 		while len(depot_manifests_retrieved) < len(manifests_to_retrieve) and num_tries < 4:
 			num_tries += 1
 			manifests_needed = [(depotid, manifestid) for (depotid, manifestid) in manifests_to_retrieve if depotid not in depot_manifests_retrieved]
@@ -461,7 +471,7 @@ def signin(args, install):
 		logon_result = client.login(args.username, args.password, auth_code = code)
 
 	if logon_result.eresult != EResult.OK:
-		log.error("logon failed", logon_result.eresult)
+		log.error("logon failed %d", logon_result.eresult)
 		return False
 			
 	if client.steamid.instance == 1:
@@ -533,6 +543,9 @@ def main():
 				help='Use an alternate account instance. Requires logging into the account once')
 	parser.add_argument('--verbose', action='store_true',
                 help='Print lots of extra output')
+	parser.add_argument('--diffdepot', type=int, help='Diff depot id to operate on')
+	parser.add_argument('--diffmanifest', type=int, help='Diff depot manifest with a target manifest id')
+	
 	args = parser.parse_args()
 
 	logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
@@ -579,10 +592,27 @@ def main():
 	app_ticket = dl.get_app_ticket(args.appid)
 	dl.ccpool = CDNClientPool(content_servers, app_ticket, client.steamid)
 	
+	additional = {}
+	if args.diffmanifest and args.diffdepot:
+		additional = {args.diffdepot: args.diffmanifest}
+		
 	log.info("Downloading depot manifests")
-	depot_manifestids = dl.download_depot_manifests()
+	depot_manifestids = dl.download_depot_manifests(additional)
 	
 	if depot_manifestids is None:
+		return
+		
+	if args.diffmanifest and args.diffdepot:
+		manifest_current = dl.manifests[depot_manifestids[args.diffdepot]]
+		manifest_target = dl.manifests[args.diffmanifest]
+		
+		if depot_manifestids[args.diffdepot] == args.diffmanifest:
+			log.info("Depot %s manifest %s is the same as current manifest %s", args.diffdepot, args.diffmanifest, depot_manifestids[args.diffdepot])
+		else:
+			log.info("Depot %s manifest %s and current manifest %s differ by:", args.diffdepot, args.diffmanifest, depot_manifestids[args.diffdepot])
+			files_changed, files_deleted = manifest_current.get_files_changed(manifest_target)
+			log.info("Modified: %s", ', '.join(files_changed))
+			log.info("Deleted: %s", ', '.join(files_deleted))
 		return
 		
 	dl.set_path_prefix(args.dir)

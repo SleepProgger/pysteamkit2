@@ -127,10 +127,6 @@ class CDNClient(object):
 					(h, p) = child.get('host').split(':')
 				else:
 					(h, p) = child.get('host'), 80
-
-				#TODO: fixme
-				if h.endswith('.com'):
-					h = socket.gethostbyname(h)
 				
 				load = child.get('weightedload')
 				servers.append((h, p, load))
