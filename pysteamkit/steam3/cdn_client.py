@@ -24,6 +24,7 @@ class CDNClient(object):
 		
 		self.csid = None
 		self.session = requests.Session()
+		self.error_count = 0
 		
 	def _make_request_url(self, action, params=''):
 		self.req_counter += 1
@@ -36,6 +37,10 @@ class CDNClient(object):
 
 		headers = {'x-steam-auth': 'sessionid=%d;req-counter=%d;hash=%s;' % (self.session_id, self.req_counter, sha_hash)}
 		return (url, headers)
+		
+	def mark_failed_request(self):
+		self.error_count += 1
+		return self.error_count <= 4
 		
 	def initialize(self):
 		self.session_key = CryptoUtil.create_session_key()

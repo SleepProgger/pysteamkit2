@@ -61,6 +61,9 @@ class DepotDownloader(object):
 		self.net_action_pool = Pool(4)
 		self.file_semaphore = Semaphore(8)
 		
+	def setup_cdnclient_pool(self, content_servers, app_ticket, steamid):
+		self.ccpool = CDNClientPool(content_servers, app_ticket, steamid)
+			
 	def get_app_ticket(self, appid):
 		app_ticket = self.steamapps.get_app_ticket(appid)
 		return app_ticket.ticket if app_ticket else None
@@ -96,10 +99,13 @@ class DepotDownloader(object):
 			
 		(status, manifest) = client.download_depot_manifest(depotid, manifestid)
 
-		if manifest:
+		if manifest or client.mark_failed_request():
 			self.ccpool.return_client(client)
+
+		if manifest:
 			return (depotid, manifestid, manifest, status)
-		return (depotid, manifestid, None, status)
+		else:
+			return (depotid, manifestid, None, status)
 		
 	def get_depot_chunkstar(self, args):
 		return self.get_depot_chunk(*args)
@@ -114,10 +120,13 @@ class DepotDownloader(object):
 
 		(status, chunk_data) = client.download_depot_chunk(depotid, chunk.sha.encode('hex'))
 
-		if chunk_data:
+		if chunk_data or client.mark_failed_request():
 			self.ccpool.return_client(client)
+			
+		if chunk_data:
 			return (chunk, chunk.offset, chunk_data, status)
-		return (chunk, None, None, status)
+		else:
+			return (chunk, None, None, status)
 
 	def set_appid(self, appid):
 		licenses = self.steamapps.get_licenses()
@@ -370,7 +379,10 @@ class DepotDownloader(object):
 		depot_downloads = [gevent.spawn(self.perform_depot_download, depot_data) for depot_data in depot_download_list]
 		gevent.joinall(depot_downloads)
 		
-		log.info("[%s/%s] Completed" % (Util.sizeof_fmt(self.total_bytes_downloaded), Util.sizeof_fmt(self.total_download_size)))
+		if self.total_bytes_downloaded < self.total_download_size:
+			log.info("[%s/%s] Incomplete" % (Util.sizeof_fmt(self.total_bytes_downloaded), Util.sizeof_fmt(self.total_download_size)))
+		else:
+			log.info("[%s/%s] Completed" % (Util.sizeof_fmt(self.total_bytes_downloaded), Util.sizeof_fmt(self.total_download_size)))
 		
 	def perform_depot_download(self, depot_data):
 		(appid, depotid, manifestid, depot_files) = depot_data
@@ -490,14 +502,18 @@ def signin(args, install):
 	return client
 
 def load_install_data():
-	if not os.path.exists('install.json'):
-		return {'manifests': {}, 'accounts': {}}
-	with open('install.json', 'r') as f:
-		json_install = json.load(f)
-		#upgrade
-		if not 'accounts' in json_install:
-			json_install['accounts'] = {}
-		return json_install
+	if os.path.exists('install.json'):
+		with open('install.json', 'r') as f:
+			try:
+				json_install = json.load(f)
+				#upgrade
+				if not 'accounts' in json_install:
+					json_install['accounts'] = {}
+				return json_install
+			except ValueError:
+				log.warn("Unable to load install data")
+				
+	return {'manifests': {}, 'accounts': {}}
 
 def save_install_data(install):
 	with open('install.json', 'w') as f:
@@ -590,7 +606,7 @@ def main():
 	log.info("Found %d content servers" % (len(content_servers),))
 	
 	app_ticket = dl.get_app_ticket(args.appid)
-	dl.ccpool = CDNClientPool(content_servers, app_ticket, client.steamid)
+	dl.setup_cdnclient_pool(content_servers, app_ticket, client.steamid)
 	
 	additional = {}
 	if args.diffmanifest and args.diffdepot:

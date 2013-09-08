@@ -11,13 +11,22 @@ class CDNClientPool(object):
 			
 			if client.depot == depot or (client.app_ticket and client.auth_appticket(depot, app_ticket)) or client.auth_depotid(depot):
 				return client
-
+			else:
+				if client.mark_failed_request():
+					self.client_pool.append(client)
+				
 		while len(self.clients) > 0:
 			client = self.clients.pop(0)
 			
 			if client.initialize():
 				if client.depot == depot or (client.app_ticket and client.auth_appticket(depot, app_ticket)) or client.auth_depotid(depot):
 					return client
+				else:
+					if client.mark_failed_request():
+						self.client_pool.append(client)
+			else:
+				if client.mark_failed_request():
+					self.clients.append(client)
 				
 		raise Exception("Exhausted CDN client pool")
 		
