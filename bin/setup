@@ -1,0 +1,13 @@
+#!/bin/bash
+
+BASEDIR=`dirname $0`/..
+
+if [ ! -d "$BASEDIR/ve" ]; then
+    virtualenv -q $BASEDIR/ve --no-site-packages
+    echo "Virtualenv created."
+fi
+
+source $BASEDIR/ve/bin/activate
+
+pip install -r $BASEDIR/requirements.pip
+python $BASEDIR/setup.py install
