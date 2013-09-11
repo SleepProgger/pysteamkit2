@@ -33,10 +33,11 @@ class SteamClient():
 		self.register_message(EMsg.ClientLoggedOff, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLoggedOff)
 		self.register_message(EMsg.ClientSessionToken, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientSessionToken)
 
-	def connect(self, address):
-		if self.connection.connect(address):
-			self.connection_event.wait()
-			return True
+	def connect(self, addresses):
+		for addr in addresses:
+			if self.connection.connect(addr):
+				self.connection_event.wait()
+				return True
 		return False
 	
 	def disconnect(self):

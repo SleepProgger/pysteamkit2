@@ -17,6 +17,14 @@ from pysteamkit.util import Util
 
 log = logging.getLogger('dd')
 
+server_list = [('72.165.61.174', 27017), ('72.165.61.174', 27018), 
+				('72.165.61.175', 27017), ('72.165.61.175', 27018),
+				('72.165.61.185', 27017), ('72.165.61.185', 27018),
+				('72.165.61.187', 27017), ('72.165.61.187', 27018),
+				('146.66.152.12', 27017), ('146.66.152.12', 27018),
+				('209.197.29.196', 27017), ('209.197.29.197', 27018),
+				('cm0.steampowered.com', 27017)]
+																
 umask = None
 if os.name == 'posix':
 	umask = os.umask(0)
@@ -455,7 +463,7 @@ def signin(args, install):
 		args.password = getpass('Please enter the password for "' + args.username + '": ')
 	
 	client = SteamClient(SteamClientHandler())
-	if not client.connect(('cm0.steampowered.com', 27017)):
+	if not client.connect(server_list):
 		log.error("Unable to connect")
 		return False
 
@@ -477,7 +485,7 @@ def signin(args, install):
 		client.disconnect()
 		log.info("Steam Guard is enabled on this account. Please enter the authentication code sent to your email address.")
 		code = raw_input('Auth code: ')
-		if not client.connect(('cm0.steampowered.com', 27017)):
+		if not client.connect(server_list):
 			log.error("Unable to connect")
 			return False
 		logon_result = client.login(args.username, args.password, auth_code = code)
