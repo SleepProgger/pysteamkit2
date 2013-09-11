@@ -11,3 +11,4 @@ ve
 dist
 build
 pysteamkit.egg-info
+pyinstaller

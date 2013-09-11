@@ -1,0 +1,12 @@
+#!/bin/bash
+
+BASEDIR=`dirname $0`/..
+
+source $BASEDIR/ve/bin/activate
+
+touch $BASEDIR/ve/lib/python2.7/site-packages/google/__init__.py
+python -c "import google"
+
+git clone git://github.com/pyinstaller/pyinstaller.git $BASEDIR/pyinstaller
+
+python pyinstaller/pyinstaller.py --onefile depot_downloader.spec
