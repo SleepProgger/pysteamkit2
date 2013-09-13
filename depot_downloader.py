@@ -162,8 +162,19 @@ class DepotDownloader(object):
 					% (appid,))
 		self.appid = appid
 
-	def set_depots(self, depot_filter=(), branch='public', betapassword=None):
+	def set_depots(self, depots_in=None, branch='public', betapassword=None):
 		assert self.appid
+		
+		manifest_ids_req = []
+		depot_filter = []
+		
+		if depots_in and len(depots_in) > 0:
+			unzipped_depots_in = zip(*[map(int, x.split(':')) for x in depots_in])
+			if len(unzipped_depots_in) > 1:
+				(depot_filter, manifest_ids_req) = unzipped_depots_in
+			else:
+				(depot_filter, ) = unzipped_depots_in
+				
 		depots = self.get_depots_for_app(self.appid, depot_filter)
 		if not depots:
 			raise DownloaderError("No depots available for app %d "
@@ -182,11 +193,24 @@ class DepotDownloader(object):
 			
 		manifest_ids = {}
 		existing_manifest_ids = {}
+		
+		for i in xrange(len(manifest_ids_req)):
+			manifest_ids[depot_filter[i]] = manifest_ids_req[i]
+			
 		for depotid in depots:
-			if not depot_keys.get(depotid):
-				continue
 			depot = self.get_depot(self.appid, depotid)
 			log.info('Depot %d: "%s"', depotid, depot['name'])
+					
+			existing_manifest = self.install['manifests'].get(str(depotid))
+			if existing_manifest:
+				existing_manifest_ids[depotid] = existing_manifest
+				
+			if not depot_keys.get(depotid):
+				log.warn("No depot key available for %d", depotid)
+				continue
+			elif depotid in manifest_ids:
+				continue
+
 			manifests = depot.get('manifests')
 			encrypted_manifests = depot.get('encryptedmanifests')
 			if manifests and manifests.get(branch):
@@ -208,10 +232,6 @@ class DepotDownloader(object):
 				return False
 				
 			manifest_ids[depotid] = manifest
-			
-			existing_manifest = self.install['manifests'].get(str(depotid))
-			if existing_manifest:
-				existing_manifest_ids[depotid] = existing_manifest
 
 		self.manifest_ids = manifest_ids
 		self.existing_manifest_ids = existing_manifest_ids
@@ -339,6 +359,7 @@ class DepotDownloader(object):
 					existing_chunks = []
 					existing_chunk_hashes = {}
 					existing_file_mapping = existing_file_dictionary.get(file.filename)
+
 					if existing_file_mapping:
 						sorted_file_chunks = sorted(existing_file_mapping.chunks, key=attrgetter('offset'))
 					else:
@@ -351,6 +372,8 @@ class DepotDownloader(object):
 							
 							if Util.adler_hash(bytes) == chunk.crc:
 								existing_chunk_hashes[chunk.sha] = chunk
+								if not existing_file_mapping:
+									existing_chunks.append((chunk, chunk))
 							elif not existing_file_mapping:
 								chunks_needed.append(chunk)
 								total_download_size += chunk.cb_original
@@ -557,7 +580,7 @@ def main():
 	parser.add_argument('--branch', type=str, default='public', help='Application branch to download')
 	parser.add_argument('--betapassword', type=str, help='Password supplied for branch')
 	parser.add_argument('--dir', type=str, default='downloads/', help='Directory to operate within')
-	parser.add_argument('--depots', type=int, nargs='*', help='Specific depots to download')
+	parser.add_argument('--depots', type=str, nargs='*', help='Specific depots to download')
 	parser.add_argument('--username', type=str, help='Username to sign in with')
 	parser.add_argument('--password', type=str, help='Account password')
 	parser.add_argument('--cellid', type=int, help='Cell ID to use for downloads')
