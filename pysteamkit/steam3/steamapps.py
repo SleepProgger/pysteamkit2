@@ -18,6 +18,7 @@ class SteamApps():
 		self.client.register_message(EMsg.ClientLicenseList, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLicenseList)
 		self.client.register_message(EMsg.PICSProductInfoResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSProductInfoResponse)
 		self.client.register_message(EMsg.PICSAccessTokenResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSAccessTokenResponse)
+ 		self.client.register_message(EMsg.PICSChangesSinceResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSChangesSinceResponse)
 		self.client.register_message(EMsg.ClientGetDepotDecryptionKeyResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetDepotDecryptionKeyResponse)
 		self.client.register_message(EMsg.ClientGetAppOwnershipTicketResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetAppOwnershipTicketResponse)
 		
@@ -101,6 +102,16 @@ class SteamApps():
 		response = self.client.wait_for_job(message, EMsg.ClientGetAppOwnershipTicketResponse)
 		
 		self.ticket_cache[appid] = response.body
+		return response.body
+		
+	def get_changes_since(self, last_change_number, send_app_changes=True, send_package_changes=False):
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgPICSChangesSinceRequest, EMsg.PICSChangesSinceRequest)
+		
+		message.body.since_change_number = last_change_number
+		message.body.send_app_info_changes = send_app_changes
+		message.body.send_package_info_changes = send_package_changes
+		
+		response = self.client.wait_for_job(message, EMsg.PICSChangesSinceResponse)
 		return response.body
 		
 	def has_license_for_app(self, appid):
