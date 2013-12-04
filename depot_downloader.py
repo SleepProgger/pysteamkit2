@@ -143,7 +143,7 @@ class DepotDownloader(object):
 		if needs_token:
 			tokens = self.steamapps.get_access_tokens(needs_token)
 			if not tokens.app_access_tokens:
-				raise DownloaderError("Unable to get an access token for app %d" % (appid,))
+				raise DownloaderError("Unable to get access tokens for app %s" % (appids,))
 			app_token_request = [(x.appid, x.access_token) for x in tokens.app_access_tokens]
 			product_info = self.steamapps.get_product_info(apps=app_token_request, packages=licenses)
 			
