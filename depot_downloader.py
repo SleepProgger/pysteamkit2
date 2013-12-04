@@ -145,7 +145,7 @@ class DepotDownloader(object):
 			if not tokens.app_access_tokens:
 				raise DownloaderError("Unable to get access tokens for app %s" % (appids,))
 			app_token_request = [(x.appid, x.access_token) for x in tokens.app_access_tokens]
-			product_info = self.steamapps.get_product_info(apps=app_token_request, packages=licenses)
+			product_info = self.steamapps.get_product_info(apps=app_token_request, packages=licenseids)
 			
 		return product_info
 					
@@ -189,9 +189,9 @@ class DepotDownloader(object):
 			depot = self.get_depot(self.appid, depotid)
 			depends_app = depot.get('depotfromapp')
 			
-			if depends_app:
+			if depends_app and depot.get('sharedinstall'):
 				app_dependencies.add(int(depends_app))
-		
+
 		if len(app_dependencies) > 0:
 			log.info("Fetching application dependencies")
 			self.get_app_info(list(app_dependencies))
@@ -228,7 +228,7 @@ class DepotDownloader(object):
 				continue
 
 			depends_app = depot.get('depotfromapp')
-			if depends_app:
+			if depends_app and depot.get('sharedinstall'):
 				log.debug('Forwarded manifest request for depot %d to app %d', depotid, int(depends_app))
 				depot = self.get_depot(int(depends_app), depotid)
 				
