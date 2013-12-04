@@ -136,23 +136,25 @@ class DepotDownloader(object):
 		else:
 			return (chunk, None, None, status)
 
-	def set_appid(self, appid):
-		licenses = self.steamapps.get_licenses()
-		licenses = [x.package_id for x in licenses] if licenses else [17906]
-		log.info("Licenses: %s", ', '.join(str(x) for x in licenses))
-		
-		product_info = self.steamapps.get_product_info(apps=[appid],
-				packages=licenses)
+	def get_app_info(self, appids, licenseids=None):
+		product_info = self.steamapps.get_product_info(apps=appids, packages=licenseids)
 		needs_token = [x.appid for x in product_info.apps if x.missing_token]
 		
 		if needs_token:
 			tokens = self.steamapps.get_access_tokens(needs_token)
 			if not tokens.app_access_tokens:
-				raise DownloaderError(
-						"Unable to get an access token for app %d" % (appid,))
-			access_token = tokens.app_access_tokens[0].access_token
-			product_info = self.steamapps.get_product_info(
-					apps=[(appid,access_token)], packages=licenses)
+				raise DownloaderError("Unable to get an access token for app %d" % (appid,))
+			app_token_request = [(x.appid, x.access_token) for x in tokens.app_access_tokens]
+			product_info = self.steamapps.get_product_info(apps=app_token_request, packages=licenses)
+			
+		return product_info
+					
+	def set_appid(self, appid):
+		licenses = self.steamapps.get_licenses()
+		licenses = [x.package_id for x in licenses] if licenses else [17906]
+		log.info("Licenses: %s", ', '.join(str(x) for x in licenses))
+		
+		product_info = self.get_app_info([appid], licenses)
 
 		valid_apps = [x.appid for x in product_info.apps]
 		if appid not in valid_apps:
@@ -160,8 +162,9 @@ class DepotDownloader(object):
 		if not self.steamapps.has_license_for_app(appid):
 			raise DownloaderError("You do not have a license for app %d"
 					% (appid,))
+					
 		self.appid = appid
-
+			
 	def set_depots(self, depots_in=None, branch='public', betapassword=None):
 		assert self.appid
 		
@@ -180,6 +183,19 @@ class DepotDownloader(object):
 			raise DownloaderError("No depots available for app %d "
 					"given filter %s" % (self.appid, depot_filter))
 
+		# get app info for any dependencies
+		app_dependencies = set()
+		for depotid in depots:
+			depot = self.get_depot(self.appid, depotid)
+			depends_app = depot.get('depotfromapp')
+			
+			if depends_app:
+				app_dependencies.add(int(depends_app))
+		
+		if len(app_dependencies) > 0:
+			log.info("Fetching application dependencies")
+			self.get_app_info(list(app_dependencies))
+				
 		log.info("Fetching decryption keys")
 		depot_keys = {}
 		keys = [(self.appid, depotid) for depotid in depots]
@@ -211,6 +227,11 @@ class DepotDownloader(object):
 			elif depotid in manifest_ids:
 				continue
 
+			depends_app = depot.get('depotfromapp')
+			if depends_app:
+				log.debug('Forwarded manifest request for depot %d to app %d', depotid, int(depends_app))
+				depot = self.get_depot(int(depends_app), depotid)
+				
 			manifests = depot.get('manifests')
 			encrypted_manifests = depot.get('encryptedmanifests')
 			if manifests and manifests.get(branch):
