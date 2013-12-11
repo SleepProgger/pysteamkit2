@@ -8,7 +8,14 @@ from pysteamkit.steam3.connection import TCPConnection
 from pysteamkit.steam3.steamapps import SteamApps
 from pysteamkit.util import Util
 
-
+base_server_list = [('72.165.61.174', 27017), ('72.165.61.174', 27018), 
+				('72.165.61.175', 27017), ('72.165.61.175', 27018),
+				('72.165.61.185', 27017), ('72.165.61.185', 27018),
+				('72.165.61.187', 27017), ('72.165.61.187', 27018),
+				('146.66.152.12', 27017), ('146.66.152.12', 27018),
+				('209.197.29.196', 27017), ('209.197.29.197', 27018),
+				('cm0.steampowered.com', 27017)]
+				
 class SteamClient():
 	def __init__(self, callback):
 		self.callback = callback
@@ -22,9 +29,11 @@ class SteamClient():
 		self.steam2_ticket = None
 		self.session_token = None
 		self.server_list = dict()
+		self.account_type = None
 	
 		self.connection = TCPConnection(self)
 		self.connection_event = Event()
+		self.logon_event = Event()
 		
 		self.register_listener(callback)
 		self.steamapps = SteamApps(self)
@@ -33,7 +42,14 @@ class SteamClient():
 		self.register_message(EMsg.ClientLoggedOff, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLoggedOff)
 		self.register_message(EMsg.ClientSessionToken, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientSessionToken)
 
+	def initialize(self):
+		self.connect(base_server_list)
+		return self.callback.try_initialize_connection(self)
+		
 	def connect(self, addresses):
+		self.connection_event.clear()
+		self.logon_event.clear()
+		
 		for addr in addresses:
 			if self.connection.connect(addr):
 				self.connection_event.wait()
@@ -51,16 +67,23 @@ class SteamClient():
 	
 	def handle_disconnected(self, reason):
 		self.connection_event.clear()
+		self.logon_event.clear()
+			
 		# throw errors EVERYWHERE
 		for k in self.message_events.keys():
 			if self.message_events[k]:
-				self.message_events[k].set_exception(reason)
+				self.message_events[k].set_exception(Exception())
 				self.message_events[k] = None
 		for k in self.message_job_events.keys():
 			if self.message_job_events[k]:
-				self.message_job_events[k].set_exception(reason)
+				self.message_job_events[k].set_exception(Exception())
 				self.message_job_events[k] = None
 		
+		if self.callback.handle_disconnected(self, reason):
+			return
+			
+		self.connection_event.set()
+		self.logon_event.set()
 		self.username = None
 		self.jobid = 0
 		self.steam2_ticket = None
@@ -77,23 +100,41 @@ class SteamClient():
 		if not emsg in self.message_events:
 			return None
 		
-		if self.message_events[emsg]:
-			async_result = self.message_events[emsg]
-		else:
-			async_result = self.message_events[emsg] = AsyncResult()
+		while True:
+			if emsg != EMsg.ChannelEncryptResult and emsg != EMsg.ClientLogOnResponse:
+				self.logon_event.wait()
 		
-		return async_result.get()
+			if not self.connection.connected:
+				raise Exception("Not connected, unable to send message")
+			
+			if self.message_events[emsg]:
+				async_result = self.message_events[emsg]
+			else:
+				async_result = self.message_events[emsg] = AsyncResult()
+		
+			try:
+				return async_result.get()
+			except Exception:
+				pass
 	
 	def wait_for_job(self, message, emsg):
 		jobid = self.jobid
 		self.jobid += 1
 		message.header.source_jobid = jobid
 
-		self.connection.send_message(message)
-		
-		async_result = self.message_job_events[jobid] = AsyncResult()
-		
-		return async_result.get()
+		while True:
+			self.logon_event.wait()
+
+			if not self.connection.connected:
+				raise Exception("Not connected, unable to send message")
+
+			self.connection.send_message(message)
+			async_result = self.message_job_events[jobid] = AsyncResult()
+
+			try: 
+				return async_result.get()
+			except Exception as e:
+				pass
 
 	@property
 	def steamid(self):
@@ -149,6 +190,10 @@ class SteamClient():
 		self.connection.send_message(message)
 
 		logonResponse = self.wait_for_message(EMsg.ClientLogOnResponse)
+		
+		if self.steamid:
+			self.account_type = self.steamid.accounttype
+		
 		return logonResponse.body
 		
 	def logout(self):
@@ -163,7 +208,7 @@ class SteamClient():
 			return self.session_token
 
 		# this also can't fit in a job because it's sent on login
-		if self.steamid and self.steamid.accounttype == EAccountType.Individual:
+		if self.account_type == EAccountType.Individual:
 			self.wait_for_message(EMsg.ClientSessionToken)
 			return self.session_token
 			
@@ -207,6 +252,8 @@ class SteamClient():
 			
 		if message.body.steam2_ticket:
 			self.steam2_ticket = message.body.steam2_ticket
+			
+		self.logon_event.set()
 	
 	def handle_update_machine_auth(self, msg):
 		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientUpdateMachineAuth)

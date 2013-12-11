@@ -4,6 +4,7 @@ import binascii, json, re, struct
 from getpass import getpass
 from gevent.pool import Pool
 from gevent.coros import Semaphore
+from gevent.hub import sleep
 from operator import attrgetter
 
 from pysteamkit.crypto import CryptoUtil
@@ -16,31 +17,77 @@ from pysteamkit.steamid import SteamID
 from pysteamkit.util import Util
 
 log = logging.getLogger('dd')
-
-server_list = [('72.165.61.174', 27017), ('72.165.61.174', 27018), 
-				('72.165.61.175', 27017), ('72.165.61.175', 27018),
-				('72.165.61.185', 27017), ('72.165.61.185', 27018),
-				('72.165.61.187', 27017), ('72.165.61.187', 27018),
-				('146.66.152.12', 27017), ('146.66.152.12', 27018),
-				('209.197.29.196', 27017), ('209.197.29.197', 27018),
-				('cm0.steampowered.com', 27017)]
 																
 umask = None
 if os.name == 'posix':
 	umask = os.umask(0)
 			
 class SteamClientHandler(object):
+	def __init__(self, args, install):
+		self.args = args
+		self.install = install
+		self.auth_code = None
+		
+	def try_initialize_connection(self, client):
+		alternate_steamid = 0
+		if self.args.altinstance:
+			if not self.args.username in self.install['accounts']:
+				log.info("Cannot use alternate instance without first logging into account '%s'", self.args.username)
+			else:
+				steamid = SteamID(int(self.install['accounts'][self.args.username]))
+				steamid.instance = 2
+				alternate_steamid = steamid.steamid
+			
+		if self.args.username:
+			logon_result = client.login(self.args.username, self.args.password, steamid=alternate_steamid, auth_code = self.auth_code)
+		else:
+			logon_result = client.login_anonymous()
+
+		if logon_result.eresult == EResult.AccountLogonDenied:
+			client.disconnect()
+			log.info("Steam Guard is enabled on this account. Please enter the authentication code sent to your email address.")
+			self.auth_code = raw_input('Auth code: ')
+			return client.initialize()
+
+		if logon_result.eresult != EResult.OK:
+			log.error("logon failed %d", logon_result.eresult)
+			return False
+				
+		if client.steamid.instance == 1:
+			self.install['accounts'][self.args.username] = str(client.steamid.steamid)
+			save_install_data(self.install)
+			
+			if self.args.altinstance:
+				log.info("Switching to alternate instance..")
+				client.disconnect()
+				return client.initialize()
+		
+		log.info("Signed into Steam3 as %s" % (str(client.steamid),))
+		if self.args.cellid == None:
+			log.warn("No cell id specified, using Steam3 specified: %d" % (logon_result.cell_id,))
+			self.args.cellid = logon_result.cell_id
+		return True
+			
+	def handle_disconnected(self, client, user_reason):
+		if not user_reason:
+			for x in range(5):
+				sleep(x+1)
+				if client.initialize():
+					return True
+		return False
+	
 	def get_sentry_file(self, username):
 		filename = 'sentry_%s.bin' % (username,)
+
 		if not os.path.exists(filename):
 			return None
 			
-		with open(filename, 'r') as f:
+		with open(filename, 'rb') as f:
 			return f.read()
 
 	def store_sentry_file(self, username, sentryfile):
 		filename = 'sentry_%s.bin' % (username,)
-		with open(filename, 'w') as f:
+		with open(filename, 'wb') as f:
 			f.write(sentryfile)
 			
 	def handle_message(self, emsg, msg):
@@ -506,55 +553,15 @@ class DepotDownloader(object):
 		log.info("[%s/%s] %s" % (Util.sizeof_fmt(self.total_bytes_downloaded),
 			Util.sizeof_fmt(self.total_download_size), translated))
 		
-def signin(args, install):
+def initialize(args, install):
 	while args.username and not args.password:
 		args.password = getpass('Please enter the password for "' + args.username + '": ')
 	
-	client = SteamClient(SteamClientHandler())
-	if not client.connect(server_list):
+	client = SteamClient(SteamClientHandler(args, install))
+	if not client.initialize():
 		log.error("Unable to connect")
 		return False
 
-	alternate_steamid = 0
-	if args.altinstance:
-		if not args.username in install['accounts']:
-			log.info("Cannot use alternate instance without first logging into account '%s'", args.username)
-		else:
-			steamid = SteamID(int(install['accounts'][args.username]))
-			steamid.instance = 2
-			alternate_steamid = steamid.steamid
-		
-	if args.username:
-		logon_result = client.login(args.username, args.password, steamid=alternate_steamid)
-	else:
-		logon_result = client.login_anonymous()
-
-	if logon_result.eresult == EResult.AccountLogonDenied:
-		client.disconnect()
-		log.info("Steam Guard is enabled on this account. Please enter the authentication code sent to your email address.")
-		code = raw_input('Auth code: ')
-		if not client.connect(server_list):
-			log.error("Unable to connect")
-			return False
-		logon_result = client.login(args.username, args.password, auth_code = code)
-
-	if logon_result.eresult != EResult.OK:
-		log.error("logon failed %d", logon_result.eresult)
-		return False
-			
-	if client.steamid.instance == 1:
-		install['accounts'][args.username] = str(client.steamid.steamid)
-		save_install_data(install)
-		
-		if args.altinstance:
-			log.info("Switching to alternate instance..")
-			client.disconnect()
-			return signin(args, install)
-	
-	log.info("Signed into Steam3 as %s" % (str(client.steamid),))
-	if args.cellid == None:
-		log.warn("No cell id specified, using Steam3 specified: %d" % (logon_result.cell_id,))
-		args.cellid = logon_result.cell_id
 	return client
 
 def load_install_data():
@@ -631,7 +638,7 @@ def main():
 	install = load_install_data()
 	Util.makedir('depots/')
 	
-	client = signin(args, install)
+	client = initialize(args, install)
 	
 	if client == False:
 		return

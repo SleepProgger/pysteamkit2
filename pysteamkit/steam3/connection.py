@@ -39,6 +39,9 @@ class Connection(object):
 	def __init__(self, client):
 		self.client = client
 		
+		self.connected = False
+		self.user_abort = False
+		
 		self.netfilter = None
 		self.heartbeat = None
 		
@@ -48,17 +51,24 @@ class Connection(object):
 		self.client.register_message(EMsg.ChannelEncryptResult, msg_base.Message, msg_base.MsgHdr, msg_base.ChannelEncryptResult)
 		
 	def cleanup(self):
+		if not self.connected:
+			return
+			
 		if self.heartbeat:
 			self.heartbeat.kill()
-			
+		
+		self.connected = False
 		self.netfilter = None
 		self.session_id = None
 		self.steamid = None
 		
 	def connect(self, address):
+		self.connected = False
+		self.user_abort = False
 		pass
 	
 	def disconnect(self):
+		self.user_abort = True
 		pass
 		
 	def write(self, message):
@@ -165,15 +175,18 @@ class TCPConnection(Connection):
 		self.net_write = None
 		
 	def connect(self, address):
+		super(TCPConnection, self).connect(address)
 		self.socket = socket.socket()
 		
 		with gevent.Timeout(5, False) as timeout:
 			self.socket.connect(address)
 			self.net_read = gevent.spawn(self.__read_data)
+			self.connected = True
 			return True
 		return False
 	
 	def disconnect(self):
+		super(TCPConnection, self).disconnect()
 		self.cleanup()
 		
 	def write(self, message):
@@ -184,6 +197,9 @@ class TCPConnection(Connection):
 			self.net_write = gevent.spawn(self.__write_data)
 		
 	def cleanup(self):
+		if not self.connected:
+			return
+			
 		super(TCPConnection, self).cleanup()
 		self.write_buffer = []
 		self.read_buffer = ''
@@ -197,14 +213,14 @@ class TCPConnection(Connection):
 			self.net_write.kill()
 			self.net_write = None
 			
-		self.client.handle_disconnected(SocketException())
+		self.client.handle_disconnected(self.user_abort)
 		
 	def __write_data(self):
 		while len(self.write_buffer) > 0:
 			try:
 				buffer = self.write_buffer[0]
 				self.socket.sendall(buffer)
-			except IOError:
+			except IOError as e:
 				self.cleanup()
 				return
 
@@ -216,8 +232,7 @@ class TCPConnection(Connection):
 		while self.socket:
 			try:
 				data = self.socket.recv(4096)
-			except IOError:
-				# duplication
+			except IOError as e:
 				self.cleanup()
 				return
 				
