@@ -41,13 +41,13 @@ def _symtostr(line, i):
 
 	ci = line.find('"', opening)
 	while ci != -1:
-		if line[ci - 1] != '\\':
+		if line[ci - 1] != '\\' or line[ci - 2] == '\\':
 			closing = ci
 			break
 		ci = line.find('"', ci + 1)
 
-	finalstr = line[opening:closing]
-	return finalstr, i + len(finalstr) + 1
+	finalstr = line[opening:closing].decode('string-escape')
+	return finalstr, i + (closing-opening) + 1
 
 def _readtonull(buffer, i):
 	end = buffer.find(BIN_NONE, i)
