@@ -491,8 +491,12 @@ class DepotDownloader(object):
 			
 		if os.name != 'posix':
 			os.unlink(real_path)
-		os.rename(real_path + '.partial', real_path)
-		
+			
+		try:
+			os.rename(real_path + '.partial', real_path)
+		except OSError:
+			log.warning('Failed to rename %s to %s', real_path + '.partial', real_path)
+			
 		if os.name == 'posix' and file.flags & EDepotFileFlag.Executable:
 			# Make it executable while honoring the local umask
 			os.chmod(real_path, 0775 & ~umask)
