@@ -26,7 +26,7 @@ class SteamApps():
 		if self.licenses:
 			return self.licenses
 			
-		if self.client.steamid and self.client.account_type == EAccountType.Individual:
+		if self.client.account_type == EAccountType.Individual:
 			self.client.wait_for_message(EMsg.ClientLicenseList)
 			return self.licenses
 			
@@ -89,7 +89,7 @@ class SteamApps():
 		return response.body
 	
 	def get_app_ticket(self, appid):
-		if self.client.steamid and self.client.account_type != EAccountType.Individual:
+		if self.client.account_type != EAccountType.Individual:
 			return None
 		
 		if self.ticket_cache.get(appid):
