@@ -173,8 +173,15 @@ class DepotDownloader(object):
 			log.error("Unable to initialize any CDN clients for depot id %s chunk %s", depotid, chunk.sha.encode('hex'))
 			return (chunk, None, None, None)
 
-		(status, chunk_data) = client.download_depot_chunk(depotid, chunk.sha.encode('hex'))
-
+		status = None
+		chunk_data = None
+		
+		try:
+			(status, chunk_data) = client.download_depot_chunk(depotid, chunk.sha.encode('hex'))
+		except Exception as exc:
+			log.error("Caught exception while downloading chunk %s: %s", chunk.sha.encode('hex'), exc)
+			status = 0
+			
 		if chunk_data or client.mark_failed_request():
 			self.ccpool.return_client(client)
 			

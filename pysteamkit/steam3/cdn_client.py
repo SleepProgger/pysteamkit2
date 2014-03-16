@@ -112,6 +112,7 @@ class CDNClient(object):
 			return False
 		
 		self.cdn_auth_token = token_response.token
+		self.depot = depotid
 		return True
 		
 	def download_depot_manifest(self, depotid, manifestid):
