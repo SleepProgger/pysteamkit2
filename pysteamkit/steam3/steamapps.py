@@ -13,6 +13,7 @@ class SteamApps():
 		self.app_cache = dict()
 		self.package_cache = dict()
 		self.ticket_cache = dict()
+		self.cdn_token_cache = dict()
 		
 		self.client.register_listener(self)
 		self.client.register_message(EMsg.ClientLicenseList, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLicenseList)
@@ -21,6 +22,7 @@ class SteamApps():
  		self.client.register_message(EMsg.PICSChangesSinceResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSChangesSinceResponse)
 		self.client.register_message(EMsg.ClientGetDepotDecryptionKeyResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetDepotDecryptionKeyResponse)
 		self.client.register_message(EMsg.ClientGetAppOwnershipTicketResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetAppOwnershipTicketResponse)
+		self.client.register_message(EMsg.ClientGetCDNAuthTokenResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetCDNAuthTokenResponse)
 		
 	def get_licenses(self):
 		if self.licenses:
@@ -114,6 +116,20 @@ class SteamApps():
 		response = self.client.wait_for_job(message, EMsg.PICSChangesSinceResponse)
 		return response.body
 		
+	def get_cdn_auth_token(self, appid, host):
+		if self.cdn_token_cache.get((appid, host)):
+			return self.cdn_token_cache[(appid, host)]
+			
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientGetCDNAuthToken, EMsg.ClientGetCDNAuthToken)
+		
+		message.body.app_id = appid
+		message.body.host_name = host
+		
+		response = self.client.wait_for_job(message, EMsg.ClientGetCDNAuthTokenResponse)
+		
+		self.cdn_token_cache[(appid, host)] = response.body
+		return response.body
+	
 	def has_license_for_app(self, appid):
 		for (packageid, package) in self.package_cache.items():
 			if appid in package['appids'].values():

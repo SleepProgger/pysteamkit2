@@ -377,6 +377,10 @@ class EMsg:
 	ClientUpdateMachineAuth = 5537
 	ClientUpdateMachineAuthResponse = 5538
 		
+	ClientGetCDNAuthToken = 5546
+	ClientGetCDNAuthTokenResponse = 5547
+		
+
 class EUniverse:
 	Invalid = 0
 	Public = 1

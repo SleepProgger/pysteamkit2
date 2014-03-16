@@ -7,16 +7,19 @@ from gevent import socket
 from operator import itemgetter
 
 from pysteamkit.crypto import CryptoUtil
+from pysteamkit.steam_base import EResult
 from pysteamkit.util import Util
 from pysteamkit import vdf
 
 class CDNClient(object):
-	def __init__(self, host, port, app_ticket=None, steamid=None):
+	def __init__(self, host, port, type, app_ticket=None, steamid=None):
 		self.host = host
 		self.port = port
+		self.type = type
 		self.app_ticket = app_ticket
 		self.steamid = steamid
 		self.depot = None
+		self.cdn_auth_token = None
 		
 		self.session_key = None
 		self.session_id = None
@@ -27,10 +30,13 @@ class CDNClient(object):
 		self.error_count = 0
 		
 	def _make_request_url(self, action, params=''):
-		self.req_counter += 1
-		
 		absolute_uri = '/%s/%s' % (action, params)
-		url = 'http://%s:%s%s' % (self.host, self.port, absolute_uri)
+		url = 'http://%s:%s%s%s' % (self.host, self.port, absolute_uri, self.cdn_auth_token or '')
+
+		if self.type == 'CDN':
+			return (url, {})
+			
+		self.req_counter += 1
 		
 		hash_buffer = struct.pack('<QQ', self.session_id, self.req_counter) + self.session_key + absolute_uri
 		sha_hash = Util.sha1_hash(hash_buffer, True)
@@ -43,6 +49,9 @@ class CDNClient(object):
 		return self.error_count <= 4
 		
 	def initialize(self):
+		if self.type == 'CDN':
+			return True
+			
 		self.session_key = CryptoUtil.create_session_key()
 		crypted_key = CryptoUtil.rsa_encrypt(self.session_key)
 
@@ -81,7 +90,7 @@ class CDNClient(object):
 		self.depot = depotid
 		return True
 		
-	def auth_depotid(self, depotid):		
+	def auth_depotid(self, depotid):
 		(url, headers) = self._make_request_url('authdepot')
 		payload = dict(depotid = depotid)
 
@@ -92,7 +101,19 @@ class CDNClient(object):
 			
 		self.depot = depotid
 		return True
-
+		
+	def auth_cdn_token(self, steamapps, appid, depotid):
+		if self.type != 'CDN':
+			return False
+			
+		token_response = steamapps.get_cdn_auth_token(appid, self.host)
+	
+		if token_response.eresult != EResult.OK:
+			return False
+		
+		self.cdn_auth_token = token_response.token
+		return True
+		
 	def download_depot_manifest(self, depotid, manifestid):
 		(url, headers) = self._make_request_url('depot', '%d/manifest/%d/5' % (int(depotid), int(manifestid)))
 		
@@ -116,7 +137,7 @@ class CDNClient(object):
 		
 		
 	@staticmethod
-	def fetch_server_list(host, port, cell_id, type='CS'):
+	def fetch_server_list(host, port, cell_id):
 		url = "http://%s:%d/serverlist/%d/%d/" % (host, port, cell_id, 20)
 		
 		r = requests.get(url)
@@ -127,13 +148,12 @@ class CDNClient(object):
 
 		servers = []
 		for id, child in serverkv['serverlist'].iteritems():
-			if child.get('type') == type:
-				if child.get('host').find(';')> 0:
-					(h, p) = child.get('host').split(':')
-				else:
-					(h, p) = child.get('host'), 80
-				
-				load = child.get('weightedload')
-				servers.append((h, p, load))
+			if child.get('host').find(';')> 0:
+				(h, p) = child.get('host').split(':')
+			else:
+				(h, p) = child.get('host'), 80
+			
+			load = child.get('weightedload')
+			servers.append((h, p, load, child.get('type')))
 
 		return sorted(servers, key=itemgetter(2))

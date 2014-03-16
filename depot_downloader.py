@@ -116,8 +116,8 @@ class DepotDownloader(object):
 		self.net_action_pool = Pool(4)
 		self.file_semaphore = Semaphore(8)
 		
-	def setup_cdnclient_pool(self, content_servers, app_ticket, steamid):
-		self.ccpool = CDNClientPool(content_servers, app_ticket, steamid)
+	def setup_cdnclient_pool(self, content_servers, appid, app_ticket, steamid):
+		self.ccpool = CDNClientPool(self.steamapps, content_servers, appid, app_ticket, steamid)
 			
 	def get_app_ticket(self, appid):
 		app_ticket = self.steamapps.get_app_ticket(appid)
@@ -669,7 +669,7 @@ def main():
 	log.info("Found %d content servers" % (len(content_servers),))
 	
 	app_ticket = dl.get_app_ticket(args.appid)
-	dl.setup_cdnclient_pool(content_servers, app_ticket, client.steamid)
+	dl.setup_cdnclient_pool(content_servers, args.appid, app_ticket, client.steamid)
 	
 	additional = {}
 	if args.diffmanifest and args.diffdepot:
