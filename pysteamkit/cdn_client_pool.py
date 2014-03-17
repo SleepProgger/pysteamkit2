@@ -11,7 +11,7 @@ class CDNClientPool(object):
 		while len(self.client_pool) > 0:
 			client = self.client_pool.pop()
 			
-			if client.depot == depot or (client.type == 'CDN' and client.auth_cdn_token(self.steamapps, self.appid, depot)) or (client.app_ticket and client.auth_appticket(depot, app_ticket)) or client.auth_depotid(depot):
+			if depot in client.depots or (client.type == 'CDN' and client.auth_cdn_token(self.steamapps, self.appid, depot)) or (client.app_ticket and client.auth_appticket(depot, app_ticket)) or client.auth_depotid(depot):
 				return client
 			else:
 				if client.mark_failed_request():
@@ -21,7 +21,7 @@ class CDNClientPool(object):
 			client = self.clients.pop(0)
 			
 			if client.initialize():
-				if client.depot == depot or (client.type == 'CDN' and client.auth_cdn_token(self.steamapps, self.appid, depot)) or (client.app_ticket and client.auth_appticket(depot, app_ticket)) or client.auth_depotid(depot):
+				if depot in client.depots or (client.type == 'CDN' and client.auth_cdn_token(self.steamapps, self.appid, depot)) or (client.app_ticket and client.auth_appticket(depot, app_ticket)) or client.auth_depotid(depot):
 					return client
 				else:
 					if client.mark_failed_request():

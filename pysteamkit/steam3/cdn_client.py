@@ -18,8 +18,8 @@ class CDNClient(object):
 		self.type = type
 		self.app_ticket = app_ticket
 		self.steamid = steamid
-		self.depot = None
-		self.cdn_auth_token = None
+		self.depots = []
+		self.cdn_auth_tokens = dict()
 		
 		self.session_key = None
 		self.session_id = None
@@ -29,9 +29,9 @@ class CDNClient(object):
 		self.session = requests.Session()
 		self.error_count = 0
 		
-	def _make_request_url(self, action, params=''):
+	def _make_request_url(self, action, params='', token=None):
 		absolute_uri = '/%s/%s' % (action, params)
-		url = 'http://%s:%s%s%s' % (self.host, self.port, absolute_uri, self.cdn_auth_token or '')
+		url = 'http://%s:%s%s%s' % (self.host, self.port, absolute_uri, token if token else '')
 
 		if self.type == 'CDN':
 			return (url, {})
@@ -77,6 +77,9 @@ class CDNClient(object):
 		return True
 
 	def auth_appticket(self, depotid, app_ticket):
+		if depotid in self.depots:
+			return True
+			
 		crypted_ticket = CryptoUtil.symmetric_encrypt(app_ticket, self.session_key)
 
 		(url, headers) = self._make_request_url('authdepot')
@@ -87,10 +90,13 @@ class CDNClient(object):
 		if r.status_code != 200:
 			return False
 			
-		self.depot = depotid
+		self.depots.append(depotid)
 		return True
 		
 	def auth_depotid(self, depotid):
+		if depotid in self.depots:
+			return True
+			
 		(url, headers) = self._make_request_url('authdepot')
 		payload = dict(depotid = depotid)
 
@@ -99,31 +105,34 @@ class CDNClient(object):
 		if r.status_code != 200:
 			return False
 			
-		self.depot = depotid
+		self.depots.append(depotid)
 		return True
 		
 	def auth_cdn_token(self, steamapps, appid, depotid):
 		if self.type != 'CDN':
 			return False
 			
-		token_response = steamapps.get_cdn_auth_token(appid, self.host)
+		if depotid in self.depots:
+			return True
+			
+		token_response = steamapps.get_cdn_auth_token(depotid, self.host)
 	
 		if token_response.eresult != EResult.OK:
 			return False
 		
-		self.cdn_auth_token = token_response.token
-		self.depot = depotid
+		self.cdn_auth_tokens[depotid] = token_response.token
+		self.depots.append(depotid)
 		return True
 		
 	def download_depot_manifest(self, depotid, manifestid):
-		(url, headers) = self._make_request_url('depot', '%d/manifest/%d/5' % (int(depotid), int(manifestid)))
+		(url, headers) = self._make_request_url('depot', '%d/manifest/%d/5' % (int(depotid), int(manifestid)), token=self.cdn_auth_tokens.get(depotid))
 		
 		r = self.session.get(url, headers=headers)
 
 		return (r.status_code, r.content if r.status_code == 200 else None)
 			
 	def download_depot_chunk(self, depotid, chunkid):
-		(url, headers) = self._make_request_url('depot', '%d/chunk/%s' % (int(depotid), chunkid))
+		(url, headers) = self._make_request_url('depot', '%d/chunk/%s' % (int(depotid), chunkid), token=self.cdn_auth_tokens.get(depotid))
 		
 		r = self.session.get(url, headers=headers)
 		
