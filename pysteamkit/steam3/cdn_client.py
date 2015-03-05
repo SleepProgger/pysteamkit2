@@ -11,6 +11,11 @@ from pysteamkit.steam_base import EResult
 from pysteamkit.util import Util
 from pysteamkit import vdf
 
+try:
+	import lzma
+except ImportError:
+	from backports import lzma
+
 class CDNClient(object):
 	def __init__(self, host, port, type, app_ticket=None, steamid=None):
 		self.host = host
@@ -141,9 +146,14 @@ class CDNClient(object):
 	@staticmethod
 	def process_chunk(chunk, depot_key):
 		decrypted_chunk = CryptoUtil.symmetric_decrypt(chunk, depot_key)
-		zip_buffer = StringIO.StringIO(decrypted_chunk)
-		with zipfile.ZipFile(zip_buffer, 'r') as zip:
-			return zip.read(zip.namelist()[0])
+		if decrypted_chunk[:2] == 'VZ':
+			filter = lzma._decode_filter_properties(lzma.FILTER_LZMA1, decrypted_chunk[7:12])
+			lzmadec = lzma.LZMADecompressor(lzma.FORMAT_RAW, None, [filter])
+			return lzmadec.decompress(decrypted_chunk[12:len(decrypted_chunk)-10])
+		else:
+			zip_buffer = StringIO.StringIO(decrypted_chunk)
+			with zipfile.ZipFile(zip_buffer, 'r') as zip:
+				return zip.read(zip.namelist()[0])
 		
 		
 	@staticmethod

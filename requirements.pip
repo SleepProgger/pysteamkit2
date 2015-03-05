@@ -2,3 +2,4 @@ requests
 pycrypto
 gevent
 protobuf
+backports.lzma
