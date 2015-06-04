@@ -304,7 +304,7 @@ class DepotDownloader(object):
 				(manifest,) = struct.unpack('q', manifest_bytes)
 			else:
 				log.error("Unable to find manifest for branch %s", branch)
-				return False
+				continue
 				
 			manifest_ids[depotid] = manifest
 
