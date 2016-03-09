@@ -1,6 +1,7 @@
 from gevent.event import AsyncResult, Event
 
-from pysteamkit.protobuf import steammessages_clientserver_pb2
+from pysteamkit.protobuf import steammessages_clientserver_pb2,\
+	steammessages_clientserver_2_pb2
 from pysteamkit.steam_base import EMsg, EResult, EUniverse, EAccountType
 from pysteamkit.steamid import SteamID
 from pysteamkit.steam3 import msg_base
@@ -256,7 +257,7 @@ class SteamClient():
 		self.logon_event.set()
 	
 	def handle_update_machine_auth(self, msg):
-		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientUpdateMachineAuth)
+		message = msg_base.ProtobufMessage(steammessages_clientserver_2_pb2.CMsgClientUpdateMachineAuth)
 		message.parse(msg)
 		
 		sentryfile = message.body.bytes
@@ -264,7 +265,7 @@ class SteamClient():
 		
 		self.callback.store_sentry_file(self.username, sentryfile)
 		
-		response = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientUpdateMachineAuthResponse, EMsg.ClientUpdateMachineAuthResponse)
+		response = msg_base.ProtobufMessage(steammessages_clientserver_2_pb2.CMsgClientUpdateMachineAuthResponse, EMsg.ClientUpdateMachineAuthResponse)
 		response.header.target_jobid = message.header.source_jobid
 		
 		response.body.cubwrote = message.body.cubtowrite

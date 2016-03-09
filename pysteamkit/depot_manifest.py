@@ -68,7 +68,11 @@ class DepotManifest(object):
 	def parse(self, input):
 		zip_buffer = StringIO.StringIO(input)
 		with zipfile.ZipFile(zip_buffer, 'r') as zip:
-			payload = zip.read('z')
+			try:
+				payload = zip.read('z')
+			except KeyError:
+				payload = zip.read('zip')
+				
 				
 		magic, payload_len = struct.unpack_from('<II', payload)
 		

@@ -1,5 +1,5 @@
 from pysteamkit import vdf
-from pysteamkit.protobuf import steammessages_clientserver_pb2
+from pysteamkit.protobuf import steammessages_clientserver_pb2, steammessages_clientserver_2_pb2
 from pysteamkit.steam_base import EMsg, EAccountType
 from pysteamkit.steam3 import msg_base
 from pysteamkit.util import Util
@@ -17,12 +17,12 @@ class SteamApps():
 		
 		self.client.register_listener(self)
 		self.client.register_message(EMsg.ClientLicenseList, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientLicenseList)
-		self.client.register_message(EMsg.PICSProductInfoResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSProductInfoResponse)
-		self.client.register_message(EMsg.PICSAccessTokenResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSAccessTokenResponse)
- 		self.client.register_message(EMsg.PICSChangesSinceResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgPICSChangesSinceResponse)
-		self.client.register_message(EMsg.ClientGetDepotDecryptionKeyResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetDepotDecryptionKeyResponse)
+		self.client.register_message(EMsg.ClientPICSProductInfoResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientPICSProductInfoResponse)
+		self.client.register_message(EMsg.ClientPICSAccessTokenResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientPICSAccessTokenResponse)
+ 		self.client.register_message(EMsg.ClientPICSChangesSinceResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientPICSChangesSinceResponse)
+		self.client.register_message(EMsg.ClientGetDepotDecryptionKeyResponse, msg_base.ProtobufMessage, steammessages_clientserver_2_pb2.CMsgClientGetDepotDecryptionKeyResponse)
 		self.client.register_message(EMsg.ClientGetAppOwnershipTicketResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetAppOwnershipTicketResponse)
-		self.client.register_message(EMsg.ClientGetCDNAuthTokenResponse, msg_base.ProtobufMessage, steammessages_clientserver_pb2.CMsgClientGetCDNAuthTokenResponse)
+		self.client.register_message(EMsg.ClientGetCDNAuthTokenResponse, msg_base.ProtobufMessage, steammessages_clientserver_2_pb2.CMsgClientGetCDNAuthTokenResponse)
 		
 	def get_licenses(self):
 		if self.licenses:
@@ -35,7 +35,7 @@ class SteamApps():
 		return None
 		
 	def get_depot_key(self, depot_id, app_id=0):
-		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientGetDepotDecryptionKey, EMsg.ClientGetDepotDecryptionKey)
+		message = msg_base.ProtobufMessage(steammessages_clientserver_2_pb2.CMsgClientGetDepotDecryptionKey, EMsg.ClientGetDepotDecryptionKey)
 
 		message.body.depot_id = depot_id
 		message.body.app_id = app_id
@@ -45,7 +45,7 @@ class SteamApps():
 		
 		
 	def get_product_info(self, apps=None, packages=None):
-		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgPICSProductInfoRequest, EMsg.PICSProductInfoRequest)
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientPICSProductInfoRequest, EMsg.ClientPICSProductInfoRequest)
 
 		if apps:
 			for app in apps:
@@ -66,7 +66,7 @@ class SteamApps():
 		
 		message.body.meta_data_only = False
 		
-		response = self.client.wait_for_job(message, EMsg.PICSProductInfoResponse)
+		response = self.client.wait_for_job(message, EMsg.ClientPICSProductInfoResponse)
 
 		for app in response.body.apps:
 			self.app_cache[app.appid] = vdf.loads(app.buffer)['appinfo']
@@ -78,7 +78,7 @@ class SteamApps():
 		return response.body
 
 	def get_access_tokens(self, apps=None, packages=None):
-		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgPICSAccessTokenRequest, EMsg.PICSAccessTokenRequest)
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientPICSAccessTokenRequest, EMsg.ClientPICSAccessTokenRequest)
 		
 		if apps:
 			message.body.appids.extend(apps)
@@ -86,7 +86,7 @@ class SteamApps():
 		if packages:
 			message.body.packageids.extend(packages)
 			
-		response = self.client.wait_for_job(message, EMsg.PICSAccessTokenResponse)
+		response = self.client.wait_for_job(message, EMsg.ClientPICSAccessTokenResponse)
 		
 		return response.body
 	
@@ -107,20 +107,20 @@ class SteamApps():
 		return response.body
 		
 	def get_changes_since(self, last_change_number, send_app_changes=True, send_package_changes=False):
-		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgPICSChangesSinceRequest, EMsg.PICSChangesSinceRequest)
+		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientPICSChangesSinceRequest, EMsg.ClientPICSChangesSinceRequest)
 		
 		message.body.since_change_number = last_change_number
 		message.body.send_app_info_changes = send_app_changes
 		message.body.send_package_info_changes = send_package_changes
 		
-		response = self.client.wait_for_job(message, EMsg.PICSChangesSinceResponse)
+		response = self.client.wait_for_job(message, EMsg.ClientPICSChangesSinceResponse)
 		return response.body
 		
 	def get_cdn_auth_token(self, appid, host):
 		if self.cdn_token_cache.get((appid, host)):
 			return self.cdn_token_cache[(appid, host)]
 			
-		message = msg_base.ProtobufMessage(steammessages_clientserver_pb2.CMsgClientGetCDNAuthToken, EMsg.ClientGetCDNAuthToken)
+		message = msg_base.ProtobufMessage(steammessages_clientserver_2_pb2.CMsgClientGetCDNAuthToken, EMsg.ClientGetCDNAuthToken)
 		
 		message.body.app_id = appid
 		message.body.host_name = host
